@@ -46,13 +46,15 @@ class Settings(BaseSettings):
     # Debug â€” when True, /v1/chat/completions returns mock LLM responses (no API keys needed).
     # Set DEBUG=false (and OPENAI_API_KEY and/or ANTHROPIC_API_KEY) for real inference.
     debug: bool = False
+    api_docs_enabled: bool = True
 
     # CORS â€” allowed origins for browser requests (e.g. frontend on Vercel).
     # Env var: CORS_ORIGINS=https://your-app.vercel.app
     # Comma-separated: CORS_ORIGINS=https://app.vercel.app,https://custom.com
     # JSON array: CORS_ORIGINS=["https://app.vercel.app"]
     # Stored as str so pydantic-settings doesn't JSON-decode plain comma values.
-    cors_origins: str = "https://app.asahio.dev,https://asahio.vercel.app"
+    cors_origins: str = "https://app.asahio.dev,https://asahio.vercel.app,https://www.asahio.in/"
+    cors_origin_regex: Optional[str] = r"https://.*\.vercel\.app"
 
     def get_cors_origins(self) -> list[str]:
         """Parse CORS origins from string: JSON array or comma-separated."""

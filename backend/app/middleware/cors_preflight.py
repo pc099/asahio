@@ -1,8 +1,10 @@
-"""Handle CORS preflight (OPTIONS) with 200 so browsers allow the actual request.
+﻿"""Handle CORS preflight (OPTIONS) with 200 so browsers allow the actual request.
 
 Starlette CORSMiddleware can return 400 in some cases; this ensures OPTIONS
 always gets 200 with correct CORS headers when the origin is allowed.
 """
+
+import re
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -12,10 +14,19 @@ from starlette.responses import Response
 class CORSPreflightMiddleware(BaseHTTPMiddleware):
     """Respond to OPTIONS with 200 and CORS headers. Runs first (add last)."""
 
-    def __init__(self, app, allow_origins: list[str], allow_credentials: bool = False):
+    def __init__(
+        self,
+        app,
+        allow_origins: list[str],
+        allow_origin_regex: str | None = None,
+        allow_credentials: bool = False,
+    ):
         super().__init__(app)
         self._allow_origins = set(allow_origins) if allow_origins else set()
         self._allow_all = "*" in self._allow_origins or not self._allow_origins
+        self._allow_origin_regex = (
+            re.compile(allow_origin_regex) if allow_origin_regex else None
+        )
         self._allow_credentials = allow_credentials and not self._allow_all
 
     async def dispatch(
@@ -28,6 +39,8 @@ class CORSPreflightMiddleware(BaseHTTPMiddleware):
         if self._allow_all:
             allow_origin = "*"
         elif origin and origin in self._allow_origins:
+            allow_origin = origin
+        elif origin and self._allow_origin_regex and self._allow_origin_regex.fullmatch(origin):
             allow_origin = origin
         elif self._allow_origins:
             allow_origin = next(iter(self._allow_origins))

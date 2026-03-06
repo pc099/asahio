@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function LandingPage() {
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+  const apiDocsHref = apiBase ? `${apiBase}/docs` : "/docs";
+  const openApiHref = apiBase ? `${apiBase}/openapi.json` : "/docs";
   const [engineStatus, setEngineStatus] = useState<
     "checking" | "ready" | "offline"
   >("checking");
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_URL || "";
+    const base = apiBase;
     if (!base) {
       setEngineStatus("ready");
       return;
@@ -274,13 +277,13 @@ export default function LandingPage() {
             <h4 className="mb-4 font-semibold text-foreground">Resources</h4>
             <ul className="space-y-2 text-sm">
               <li>
-                <a href="/docs" className="hover:text-foreground transition-colors">
+                <a href={apiDocsHref} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">
                   Docs
                 </a>
               </li>
               <li>
                 <a
-                  href="/openapi.json"
+                  href={openApiHref}
                   className="hover:text-foreground transition-colors"
                 >
                   API Reference
@@ -347,6 +350,8 @@ export default function LandingPage() {
     </div>
   );
 }
+
+
 
 
 

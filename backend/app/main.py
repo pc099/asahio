@@ -61,7 +61,7 @@ async def _ensure_schema() -> None:
     """Run schema fix if needed, then create_all. Retry once after dropping user tables if create_all fails with FK type mismatch."""
     _engine = _db_engine_mod.engine  # Use module attribute (overridable by tests)
 
-    # PostgreSQL-specific schema migration â€” skip for SQLite (tests)
+    # PostgreSQL-specific schema migration - skip for SQLite (tests)
     if _engine.url.drivername.startswith("postgresql"):
         async with _engine.begin() as conn:
             await conn.run_sync(_check_and_fix_users_id_type)
@@ -109,9 +109,9 @@ async def lifespan(app: FastAPI):
             cache = RedisCache(app.state.redis)
             await cache.setup_semantic_index()
         except Exception:
-            logger.warning("Semantic cache index setup failed â€” semantic cache disabled")
+            logger.warning("Semantic cache index setup failed - semantic cache disabled")
     except Exception:
-        logger.warning("Redis not available â€” rate limiting and caching disabled")
+        logger.warning("Redis not available - rate limiting and caching disabled")
         app.state.redis = None
 
     yield
@@ -130,17 +130,24 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description="ASAHIO agent infrastructure and observability API.",
         lifespan=lifespan,
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs" if settings.api_docs_enabled else None,
+        redoc_url="/redoc" if settings.api_docs_enabled else None,
+        openapi_url="/openapi.json" if settings.api_docs_enabled else None,
     )
 
     # CORS: last added runs first. Preflight handles OPTIONS with 200; CORSMiddleware adds headers to other responses.
     origins = settings.get_cors_origins()
+    origin_regex = settings.cors_origin_regex or None
     allow_credentials = True
     if origins == ["*"]:
         allow_credentials = False  # Browser forbids * with credentials
         logger.warning("CORS_ORIGINS=* disables credentials; use exact origins in production")
-    logger.info("CORS allow_origins=%s allow_credentials=%s", origins, allow_credentials)
+    logger.info(
+        "CORS allow_origins=%s allow_origin_regex=%s allow_credentials=%s",
+        origins,
+        origin_regex,
+        allow_credentials,
+    )
 
     app.add_middleware(MeteringMiddleware)
     app.add_middleware(RateLimitMiddleware)
@@ -148,6 +155,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex=origin_regex,
         allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -157,6 +165,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSPreflightMiddleware,
         allow_origins=origins,
+        allow_origin_regex=origin_regex,
         allow_credentials=allow_credentials,
     )
 
@@ -191,6 +200,8 @@ def create_app() -> FastAPI:
             "cors_origins": settings.get_cors_origins(),
             "cors_origins_raw": settings.cors_origins,
             "cors_env": os.environ.get("CORS_ORIGINS", "<NOT SET>"),
+            "cors_origin_regex": settings.cors_origin_regex,
+            "api_docs_enabled": settings.api_docs_enabled,
             "debug": settings.debug,
         }
 
@@ -198,6 +209,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
-
-
