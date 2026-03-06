@@ -1,18 +1,20 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import { type ComponentType, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
-  LayoutDashboard,
-  Zap,
-  Database,
   BarChart2,
+  BookOpen,
+  CreditCard,
+  Database,
   Key,
-  Settings,
+  LayoutDashboard,
   Play,
   Plus,
   Search,
+  Settings,
+  Zap,
 } from "lucide-react";
 
 interface CommandMenuProps {
@@ -27,7 +29,7 @@ export function CommandMenu({ orgSlug }: CommandMenuProps) {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setOpen((o) => !o);
+        setOpen((current) => !current);
       }
     };
     document.addEventListener("keydown", down);
@@ -72,42 +74,14 @@ export function CommandMenu({ orgSlug }: CommandMenuProps) {
             heading="Navigation"
             className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
           >
-            <CommandItem
-              icon={LayoutDashboard}
-              label="Dashboard"
-              shortcut="G D"
-              onSelect={() => navigate(`/${orgSlug}/dashboard`)}
-            />
-            <CommandItem
-              icon={Zap}
-              label="Gateway"
-              shortcut="G G"
-              onSelect={() => navigate(`/${orgSlug}/gateway`)}
-            />
-            <CommandItem
-              icon={Database}
-              label="Cache"
-              shortcut="G C"
-              onSelect={() => navigate(`/${orgSlug}/cache`)}
-            />
-            <CommandItem
-              icon={BarChart2}
-              label="Analytics"
-              shortcut="G A"
-              onSelect={() => navigate(`/${orgSlug}/analytics`)}
-            />
-            <CommandItem
-              icon={Key}
-              label="API Keys"
-              shortcut="G K"
-              onSelect={() => navigate(`/${orgSlug}/keys`)}
-            />
-            <CommandItem
-              icon={Settings}
-              label="Settings"
-              shortcut="G S"
-              onSelect={() => navigate(`/${orgSlug}/settings`)}
-            />
+            <CommandItem icon={LayoutDashboard} label="Dashboard" shortcut="G D" onSelect={() => navigate(`/${orgSlug}/dashboard`)} />
+            <CommandItem icon={Zap} label="Gateway" shortcut="G G" onSelect={() => navigate(`/${orgSlug}/gateway`)} />
+            <CommandItem icon={Database} label="Cache" shortcut="G C" onSelect={() => navigate(`/${orgSlug}/cache`)} />
+            <CommandItem icon={BarChart2} label="Analytics" shortcut="G A" onSelect={() => navigate(`/${orgSlug}/analytics`)} />
+            <CommandItem icon={CreditCard} label="Billing" shortcut="G B" onSelect={() => navigate(`/${orgSlug}/billing`)} />
+            <CommandItem icon={Key} label="API Keys" shortcut="G K" onSelect={() => navigate(`/${orgSlug}/keys`)} />
+            <CommandItem icon={BookOpen} label="Docs" onSelect={() => navigate(`/${orgSlug}/docs`)} />
+            <CommandItem icon={Settings} label="Settings" shortcut="G S" onSelect={() => navigate(`/${orgSlug}/settings`)} />
           </Command.Group>
 
           <Command.Separator className="my-1 h-px bg-border" />
@@ -116,16 +90,8 @@ export function CommandMenu({ orgSlug }: CommandMenuProps) {
             heading="Actions"
             className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
           >
-            <CommandItem
-              icon={Plus}
-              label="Create API Key"
-              onSelect={() => navigate(`/${orgSlug}/keys`)}
-            />
-            <CommandItem
-              icon={Play}
-              label="Open Playground"
-              onSelect={() => navigate(`/${orgSlug}/gateway/playground`)}
-            />
+            <CommandItem icon={Plus} label="Create API Key" onSelect={() => navigate(`/${orgSlug}/keys`)} />
+            <CommandItem icon={Play} label="Open Playground" onSelect={() => navigate(`/${orgSlug}/gateway/playground`)} />
           </Command.Group>
         </Command.List>
       </Command.Dialog>
@@ -139,7 +105,7 @@ function CommandItem({
   shortcut,
   onSelect,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   shortcut?: string;
   onSelect: () => void;
@@ -153,9 +119,9 @@ function CommandItem({
       <span className="flex-1">{label}</span>
       {shortcut && (
         <span className="flex items-center gap-1">
-          {shortcut.split(" ").map((key, i) => (
+          {shortcut.split(" ").map((key, index) => (
             <kbd
-              key={i}
+              key={index}
               className="flex h-5 min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground"
             >
               {key}
@@ -166,3 +132,4 @@ function CommandItem({
     </Command.Item>
   );
 }
+

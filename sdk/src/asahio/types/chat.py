@@ -1,24 +1,73 @@
-"""Chat completion types — mirrors the OpenAI response shape with an extra `asahi` field."""
+﻿"""Chat completion types for the ASAHIO Python SDK."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Optional
 
 
 @dataclass
-class AsahiMetadata:
-    """ASAHI-specific metadata attached to every response."""
+class AsahioMetadata:
+    """Canonical ASAHIO metadata attached to every completion."""
 
     cache_hit: bool
-    cache_tier: Optional[str]  # "exact", "semantic", "intermediate", or None
+    cache_tier: Optional[str]
     model_requested: Optional[str]
     model_used: str
-    cost_without_asahi: float
-    cost_with_asahi: float
+    cost_without_asahio: float
+    cost_with_asahio: float
     savings_usd: float
-    savings_pct: float  # 0-100
+    savings_pct: float
     routing_reason: Optional[str] = None
+    provider: Optional[str] = None
+    routing_mode: Optional[str] = None
+    intervention_mode: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_session_id: Optional[str] = None
+    session_id: Optional[str] = None
+    model_endpoint_id: Optional[str] = None
+    routing_factors: dict = field(default_factory=dict)
+    routing_confidence: Optional[float] = None
+    policy_action: Optional[str] = None
+    policy_reason: Optional[str] = None
+    request_id: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AsahioMetadata":
+        return cls(
+            cache_hit=bool(data.get("cache_hit", False)),
+            cache_tier=data.get("cache_tier"),
+            model_requested=data.get("model_requested"),
+            model_used=data.get("model_used", "unknown"),
+            cost_without_asahio=float(data.get("cost_without_asahio", data.get("cost_without_asahi", 0.0))),
+            cost_with_asahio=float(data.get("cost_with_asahio", data.get("cost_with_asahi", 0.0))),
+            savings_usd=float(data.get("savings_usd", 0.0)),
+            savings_pct=float(data.get("savings_pct", 0.0)),
+            routing_reason=data.get("routing_reason"),
+            provider=data.get("provider"),
+            routing_mode=data.get("routing_mode"),
+            intervention_mode=data.get("intervention_mode"),
+            agent_id=data.get("agent_id"),
+            agent_session_id=data.get("agent_session_id"),
+            session_id=data.get("session_id"),
+            model_endpoint_id=data.get("model_endpoint_id"),
+            routing_factors=data.get("routing_factors") or {},
+            routing_confidence=(float(data["routing_confidence"]) if data.get("routing_confidence") is not None else None),
+            policy_action=data.get("policy_action"),
+            policy_reason=data.get("policy_reason"),
+            request_id=data.get("request_id"),
+        )
+
+    @property
+    def cost_without_asahi(self) -> float:
+        return self.cost_without_asahio
+
+    @property
+    def cost_with_asahi(self) -> float:
+        return self.cost_with_asahio
+
+
+AsahiMetadata = AsahioMetadata
 
 
 @dataclass
@@ -36,8 +85,6 @@ class Choice:
 
 @dataclass
 class DeltaChoice:
-    """A single chunk delta in a streaming response."""
-
     index: int
     delta: Message
     finish_reason: Optional[str] = None
@@ -52,56 +99,56 @@ class Usage:
 
 @dataclass
 class ChatCompletion:
-    """Full (non-streaming) chat completion response."""
-
     id: str
     object: str
     model: str
     choices: list[Choice]
     usage: Usage
-    asahi: AsahiMetadata
+    asahio: AsahioMetadata
+
+    @property
+    def asahi(self) -> AsahioMetadata:
+        return self.asahio
 
     @classmethod
-    def from_dict(cls, data: dict) -> ChatCompletion:
-        """Build a ChatCompletion from a raw JSON dict."""
+    def from_dict(cls, data: dict) -> "ChatCompletion":
         choices = [
             Choice(
-                index=c["index"],
-                message=Message(**c["message"]),
-                finish_reason=c["finish_reason"],
+                index=choice["index"],
+                message=Message(**choice["message"]),
+                finish_reason=choice["finish_reason"],
             )
-            for c in data["choices"]
+            for choice in data["choices"]
         ]
         usage = Usage(**data["usage"])
-        asahi = AsahiMetadata(**data["asahi"])
+        metadata_payload = data.get("asahio") or data.get("asahi") or {}
+        metadata = AsahioMetadata.from_dict(metadata_payload)
         return cls(
             id=data["id"],
             object=data["object"],
             model=data["model"],
             choices=choices,
             usage=usage,
-            asahi=asahi,
+            asahio=metadata,
         )
 
 
 @dataclass
 class ChatCompletionChunk:
-    """A single SSE chunk in a streaming response."""
-
     id: str
     object: str
     model: Optional[str] = None
     choices: list[DeltaChoice] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict) -> ChatCompletionChunk:
+    def from_dict(cls, data: dict) -> "ChatCompletionChunk":
         choices = [
             DeltaChoice(
-                index=c["index"],
-                delta=Message(**c.get("delta", {"role": "assistant", "content": ""})),
-                finish_reason=c.get("finish_reason"),
+                index=choice["index"],
+                delta=Message(**choice.get("delta", {"role": "assistant", "content": ""})),
+                finish_reason=choice.get("finish_reason"),
             )
-            for c in data.get("choices", [])
+            for choice in data.get("choices", [])
         ]
         return cls(
             id=data["id"],

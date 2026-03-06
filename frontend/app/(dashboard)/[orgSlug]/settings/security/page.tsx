@@ -1,21 +1,21 @@
-"use client";
+﻿"use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { getAuditLog } from "@/lib/api";
 import Link from "next/link";
-import { Shield } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
+import { Shield } from "lucide-react";
+import { getAuditLog } from "@/lib/api";
 
-export default function SecurityPage({
-  params,
-}: {
-  params: { orgSlug: string };
-}) {
+export default function SecurityPage() {
+  const params = useParams();
+  const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
   const [page, setPage] = useState(1);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["audit-log", page],
-    queryFn: () => getAuditLog({ page, limit: 25 }),
+    queryKey: ["audit-log", orgSlug, page],
+    queryFn: () => getAuditLog({ page, limit: 25 }, undefined, orgSlug),
+    enabled: Boolean(orgSlug),
   });
 
   const entries = data?.data ?? [];
@@ -25,22 +25,19 @@ export default function SecurityPage({
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Security</h1>
-        <p className="text-sm text-muted-foreground">
-          Audit log and security events
-        </p>
+        <p className="text-sm text-muted-foreground">Audit log and security events</p>
       </div>
 
-      {/* Navigation */}
       <div className="flex gap-4 border-b border-border">
         <Link
-          href={`/${params.orgSlug}/settings`}
-          className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          href={`/${orgSlug}/settings`}
+          className="px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           General
         </Link>
         <Link
-          href={`/${params.orgSlug}/settings/team`}
-          className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          href={`/${orgSlug}/settings/team`}
+          className="px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           Team
         </Link>
@@ -49,7 +46,6 @@ export default function SecurityPage({
         </div>
       </div>
 
-      {/* Audit log table */}
       <div className="rounded-lg border border-border bg-card shadow-sm">
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-asahio/20">
@@ -60,16 +56,14 @@ export default function SecurityPage({
 
         {isLoading ? (
           <div className="animate-pulse space-y-4 p-6">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-10 rounded bg-muted" />
+            {[1, 2, 3, 4, 5].map((item) => (
+              <div key={item} className="h-10 rounded bg-muted" />
             ))}
           </div>
         ) : entries.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center gap-3">
             <Shield className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No audit log entries yet.
-            </p>
+            <p className="text-sm text-muted-foreground">No audit log entries yet.</p>
           </div>
         ) : (
           <>
@@ -87,14 +81,12 @@ export default function SecurityPage({
                 {entries.map((entry) => (
                   <tr
                     key={entry.id}
-                    className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors"
+                    className="border-b border-border transition-colors last:border-0 hover:bg-muted/50"
                   >
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                       {new Date(entry.timestamp).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {entry.actor}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-foreground">{entry.actor}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                         {entry.action}
@@ -111,7 +103,6 @@ export default function SecurityPage({
               </tbody>
             </table>
 
-            {/* Pagination */}
             {pagination && pagination.pages > 1 && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">
                 <p className="text-xs text-muted-foreground">
@@ -119,18 +110,16 @@ export default function SecurityPage({
                 </p>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
                     disabled={page <= 1}
-                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Previous
                   </button>
                   <button
-                    onClick={() =>
-                      setPage((p) => Math.min(pagination.pages, p + 1))
-                    }
+                    onClick={() => setPage((current) => Math.min(pagination.pages, current + 1))}
                     disabled={page >= pagination.pages}
-                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Next
                   </button>

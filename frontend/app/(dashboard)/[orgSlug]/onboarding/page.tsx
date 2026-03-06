@@ -1,17 +1,10 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Check,
-  ChevronRight,
-  Copy,
-  Package,
-  Key,
-  Zap,
-  TrendingDown,
-} from "lucide-react";
+import { Check, ChevronRight, Copy, Key, Package, TrendingDown, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getAnalyticsOverview } from "@/lib/api";
@@ -20,68 +13,67 @@ import { fireConfetti } from "@/lib/confetti";
 const steps = [
   {
     title: "Install the SDK",
-    description: "Add the ASAHIO Python SDK to your project",
+    description: "Add the ASAHIO Python SDK to your project.",
     icon: Package,
   },
   {
-    title: "Get your API Key",
-    description: "Configure authentication for your application",
+    title: "Create an API key",
+    description: "Issue an org-scoped key for the gateway and SDK.",
     icon: Key,
   },
   {
-    title: "Make your first request",
-    description: "Send an inference request through ASAHIO",
+    title: "Send a request",
+    description: "Use the canonical ASAHIO contract with AUTO routing.",
     icon: Zap,
   },
   {
-    title: "Watch your savings",
-    description: "Monitor cost optimization on your dashboard",
+    title: "Track savings",
+    description: "Verify cost, cache, and routing data in the dashboard.",
     icon: TrendingDown,
   },
 ] as const;
 
 const codeSnippets: Record<number, string> = {
   0: `pip install asahio-ai`,
-  1: `import asahio
+  1: `from asahio import Asahio
 
-client = asahio.Client(
-    api_key="your-api-key-here",
+client = Asahio(
+    api_key="asahio_live_your_key_here",
+    org_slug="your-org-slug",
 )`,
   2: `response = client.chat.completions.create(
     messages=[
-        {"role": "user", "content": "What is Python?"}
+        {"role": "user", "content": "Summarize the incident timeline."}
     ],
-    routing_mode="AUTOPILOT",
+    routing_mode="AUTO",
+    intervention_mode="OBSERVE",
 )
 
 print(response.choices[0].message.content)
-print(f"Saved: \${response.asahi.savings_usd:.4f}")`,
+print(response.asahio.model_used)
+print(f"Saved: \${response.asahio.savings_usd:.4f}")`,
 };
 
-export default function OnboardingPage({
-  params,
-}: {
-  params: { orgSlug: string };
-}) {
+export default function OnboardingPage() {
+  const params = useParams();
+  const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
   const [currentStep, setCurrentStep] = useState(0);
   const prevRequests = useRef<number | null>(null);
   const confettiFired = useRef(false);
 
-  // Poll for first request every 5s
   const { data: overview } = useQuery({
-    queryKey: ["overview", params.orgSlug, "onboarding"],
-    queryFn: () => getAnalyticsOverview("30d"),
+    queryKey: ["overview", orgSlug, "onboarding"],
+    queryFn: () => getAnalyticsOverview("30d", undefined, orgSlug),
     refetchInterval: 5_000,
   });
 
-  // Fire confetti when requests go from 0 to >0
   useEffect(() => {
     if (!overview || confettiFired.current) return;
     const total = overview.total_requests;
     if (prevRequests.current !== null && prevRequests.current === 0 && total > 0) {
       confettiFired.current = true;
       fireConfetti();
-      toast.success("Your first request went through! Welcome to ASAHIO.");
+      toast.success("Your first request completed. ASAHIO is now tracking savings.");
     }
     prevRequests.current = total;
   }, [overview]);
@@ -95,25 +87,20 @@ export default function OnboardingPage({
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Getting Started
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Set up ASAHIO in a few simple steps
-          </p>
+          <h1 className="text-2xl font-bold text-foreground">Getting Started</h1>
+          <p className="text-sm text-muted-foreground">Set up ASAHIO in a few deliberate steps.</p>
         </div>
         <Link
-          href={`/${params.orgSlug}/dashboard`}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          href={`/${orgSlug}/dashboard`}
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           Skip setup
         </Link>
       </div>
 
-      {/* Progress indicator */}
       <div className="flex items-center gap-2">
         {steps.map((step, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={step.title} className="flex items-center gap-2">
             <button
               onClick={() => setCurrentStep(index)}
               className={cn(
@@ -125,27 +112,17 @@ export default function OnboardingPage({
                     : "border border-border bg-background text-muted-foreground"
               )}
             >
-              {index < currentStep ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                index + 1
-              )}
+              {index < currentStep ? <Check className="h-4 w-4" /> : index + 1}
             </button>
             {index < steps.length - 1 && (
-              <div
-                className={cn(
-                  "h-0.5 w-8 sm:w-16 transition-colors",
-                  index < currentStep ? "bg-green-500" : "bg-border"
-                )}
-              />
+              <div className={cn("h-0.5 w-8 sm:w-16", index < currentStep ? "bg-green-500" : "bg-border")} />
             )}
           </div>
         ))}
       </div>
 
-      {/* Step content */}
       <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="mb-6 flex items-center gap-3">
           {(() => {
             const Icon = steps[currentStep].icon;
             return (
@@ -155,154 +132,91 @@ export default function OnboardingPage({
             );
           })()}
           <div>
-            <h2 className="text-lg font-semibold text-foreground">
-              {steps[currentStep].title}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {steps[currentStep].description}
-            </p>
+            <h2 className="text-lg font-semibold text-foreground">{steps[currentStep].title}</h2>
+            <p className="text-sm text-muted-foreground">{steps[currentStep].description}</p>
           </div>
         </div>
 
-        {/* Step 0: Install SDK */}
         {currentStep === 0 && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Install the ASAHIO SDK using pip:
-            </p>
-            <div className="relative">
-              <pre className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm text-foreground">
-                {codeSnippets[0]}
-              </pre>
-              <button
-                onClick={() => copyToClipboard(codeSnippets[0])}
-                className="absolute right-3 top-3 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+          <StepBlock
+            text="Install the SDK from the repo or your internal package registry."
+            code={codeSnippets[0]}
+            onCopy={copyToClipboard}
+          />
         )}
 
-        {/* Step 1: Get API Key */}
         {currentStep === 1 && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Create an API key from the{" "}
-              <Link
-                href={`/${params.orgSlug}/keys`}
-                className="text-asahio hover:underline"
-              >
-                API Keys page
-              </Link>
-              , then initialize the client:
+              Create a key from the <Link href={`/${orgSlug}/keys`} className="text-asahio hover:underline">API Keys page</Link>, then initialize the client with your org slug.
             </p>
-            <div className="relative">
-              <pre className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm text-foreground">
-                {codeSnippets[1]}
-              </pre>
-              <button
-                onClick={() => copyToClipboard(codeSnippets[1])}
-                className="absolute right-3 top-3 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-4">
-              <p className="text-sm text-yellow-200">
-                Keep your API key secret. Never commit it to version control or
-                expose it in client-side code.
-              </p>
+            <CodeBlock code={codeSnippets[1]} onCopy={copyToClipboard} />
+            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+              Store the raw key once, then rotate it if exposure is suspected. ASAHIO only returns the full value at creation time.
             </div>
           </div>
         )}
 
-        {/* Step 2: Make first request */}
         {currentStep === 2 && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Send your first inference request. ASAHIO will automatically route
-              it to the cheapest model that meets your quality requirements:
+              Send your first request through the canonical gateway shape. AUTO routing keeps the public API stable while the backend decides model selection.
             </p>
-            <div className="relative">
-              <pre className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm text-foreground">
-                {codeSnippets[2]}
-              </pre>
-              <button
-                onClick={() => copyToClipboard(codeSnippets[2])}
-                className="absolute right-3 top-3 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <CodeBlock code={codeSnippets[2]} onCopy={copyToClipboard} />
             <p className="text-sm text-muted-foreground">
-              Or try it in the{" "}
-              <Link
-                href={`/${params.orgSlug}/gateway/playground`}
-                className="text-asahio hover:underline"
-              >
-                Playground
-              </Link>{" "}
-              without writing any code.
+              If you want a quick manual check first, use the <Link href={`/${orgSlug}/gateway/playground`} className="text-asahio hover:underline">Playground</Link>.
             </p>
           </div>
         )}
 
-        {/* Step 3: Watch savings */}
         {currentStep === 3 && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Once you start sending requests, your savings will appear on the
-              dashboard in real-time. ASAHIO optimizes costs through:
+              Once traffic starts flowing, ASAHIO reports savings, cache hit rate, and routing decisions back into the dashboard.
             </p>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                Smart routing to the cheapest model meeting your quality constraints
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                Multi-tier caching (exact, semantic, and intermediate)
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-                Prompt optimization and token compression
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                Request batching for throughput workloads
-              </li>
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-green-400" /> Savings and request trends in the dashboard header and analytics.</li>
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-blue-400" /> Billing usage bars and invoice history on the billing page.</li>
+              <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-asahio" /> Routing metadata in the playground and audit surfaces.</li>
             </ul>
             <Link
-              href={`/${params.orgSlug}/dashboard`}
-              className="inline-flex items-center gap-2 rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark transition-colors"
+              href={`/${orgSlug}/dashboard`}
+              className="inline-flex items-center gap-2 rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-asahio-dark"
             >
-              Go to Dashboard
+              Open Dashboard
               <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
         )}
       </div>
-
-      {/* Navigation buttons */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
-          disabled={currentStep === 0}
-          className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-        >
-          Back
-        </button>
-        {currentStep < steps.length - 1 && (
-          <button
-            onClick={() => setCurrentStep((s) => s + 1)}
-            className="inline-flex items-center gap-2 rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark transition-colors"
-          >
-            Continue
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        )}
-      </div>
     </div>
   );
 }
+
+function StepBlock({ text, code, onCopy }: { text: string; code: string; onCopy: (text: string) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">{text}</p>
+      <CodeBlock code={code} onCopy={onCopy} />
+    </div>
+  );
+}
+
+function CodeBlock({ code, onCopy }: { code: string; onCopy: (text: string) => void }) {
+  return (
+    <div className="relative">
+      <pre className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm text-foreground">
+        {code}
+      </pre>
+      <button
+        onClick={() => onCopy(code)}
+        className="absolute right-3 top-3 rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+
+

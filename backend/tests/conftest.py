@@ -1,4 +1,4 @@
-"""Test fixtures for ASAHI backend.
+﻿"""Test fixtures for ASAHIO backend.
 
 Uses a temporary file-based SQLite database so all connections (across any
 event loop) see the same tables and data.
@@ -131,3 +131,4 @@ async def seed_org(session_factory: async_sessionmaker[AsyncSession]) -> dict[st
             "api_key": api_key,
             "raw_key": raw_key,
         }
+

@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Typed API client for the ASAHIO backend.
- * All endpoints return typed responses — no `any`.
+ * All endpoints return typed responses â€” no `any`.
  */
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// ── Types ────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface OverviewResponse {
   period: string;
@@ -44,6 +44,7 @@ export interface RequestLogEntry {
   id: string;
   model_requested: string | null;
   model_used: string;
+  request_id?: string | null;
   provider: string | null;
   routing_mode: string | null;
   input_tokens: number;
@@ -158,6 +159,32 @@ export interface AuditLogEntry {
   ip_address: string | null;
 }
 
+export interface CompletionMetadata {
+  cache_hit: boolean;
+  cache_tier: string | null;
+  model_requested: string | null;
+  model_used: string;
+  request_id?: string | null;
+  provider?: string | null;
+  routing_mode?: string | null;
+  intervention_mode?: string | null;
+  agent_id?: string | null;
+  agent_session_id?: string | null;
+  session_id?: string | null;
+  model_endpoint_id?: string | null;
+  cost_without_asahio: number;
+  cost_with_asahio: number;
+  cost_without_asahi: number;
+  cost_with_asahi: number;
+  savings_usd: number;
+  savings_pct: number;
+  routing_reason: string;
+  routing_factors?: Record<string, unknown>;
+  routing_confidence?: number | null;
+  policy_action?: string | null;
+  policy_reason?: string | null;
+}
+
 export interface ChatCompletionResponse {
   id: string;
   object: string;
@@ -172,20 +199,106 @@ export interface ChatCompletionResponse {
     completion_tokens: number;
     total_tokens: number;
   };
-  asahi: {
-    cache_hit: boolean;
-    cache_tier: string | null;
-    model_requested: string | null;
-    model_used: string;
-    cost_without_asahi: number;
-    cost_with_asahi: number;
-    savings_usd: number;
-    savings_pct: number;
-    routing_reason: string;
-  };
+  asahio: CompletionMetadata;
+  asahi?: CompletionMetadata;
 }
 
-// ── Token Getter ─────────────────────────────
+export interface BillingPlan {
+  id: string;
+  name: string;
+  monthly_request_limit: number;
+  monthly_token_limit: number;
+  monthly_budget_usd: number | null;
+  price_monthly_usd: number | null;
+  features: string[];
+}
+
+export interface BillingSubscription {
+  plan: string;
+  plan_name: string;
+  status: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  billing_email: string | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  monthly_request_limit: number;
+  monthly_token_limit: number;
+  monthly_budget_usd: number | null;
+  price_monthly_usd: number | null;
+  features: string[];
+  meter_name: string;
+  stripe_enabled: boolean;
+}
+
+export interface BillingUsage {
+  month: string;
+  requests_used: number;
+  tokens_used: number;
+  spend_usd: number;
+  request_limit: number;
+  token_limit: number;
+  request_usage_pct: number;
+  token_usage_pct: number;
+}
+
+export interface InvoiceItem {
+  id: string;
+  amount_paid: number;
+  amount_due: number;
+  currency: string;
+  status: string;
+  hosted_invoice_url: string | null;
+  created_at: string;
+}
+
+export interface AgentItem {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  routing_mode: string;
+  intervention_mode: string;
+  model_endpoint_id: string | null;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface ModelEndpointItem {
+  id: string;
+  name: string;
+  endpoint_type: string;
+  provider: string;
+  model_id: string;
+  endpoint_url: string | null;
+  secret_reference: string | null;
+  default_headers: Record<string, string>;
+  capability_flags: Record<string, unknown>;
+  fallback_model_id: string | null;
+  health_status: string;
+  last_health_error: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface RoutingDecisionItem {
+  id: string;
+  agent_id: string | null;
+  call_trace_id: string | null;
+  routing_mode: string | null;
+  intervention_mode: string | null;
+  selected_model: string | null;
+  selected_provider: string | null;
+  confidence: number | null;
+  decision_summary: string | null;
+  factors: Record<string, unknown>;
+  created_at: string;
+}
+// â”€â”€ Token Getter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let _getToken: (() => Promise<string | null>) | null = null;
 
@@ -193,7 +306,7 @@ export function setTokenGetter(fn: () => Promise<string | null>) {
   _getToken = fn;
 }
 
-// ── API Client ───────────────────────────────
+// â”€â”€ API Client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ApiOptions = {
   token?: string;
@@ -225,7 +338,7 @@ async function fetchApi<T>(
     const msg = err instanceof Error ? err.message : String(err);
     const isNetwork = msg.includes("fetch") || msg.includes("Failed to fetch") || msg.includes("Load failed");
     const hint = isNetwork
-      ? `Cannot reach ${API_BASE}. Open ${API_BASE}/health in a new tab — if that works, add this site’s origin (see address bar) to CORS_ORIGINS on the backend.`
+      ? `Cannot reach ${API_BASE}. Open ${API_BASE}/health in a new tab â€” if that works, add this siteâ€™s origin (see address bar) to CORS_ORIGINS on the backend.`
       : msg;
     throw new Error(hint);
   }
@@ -242,7 +355,7 @@ function orgHeaders(orgSlug?: string): Record<string, string> | undefined {
   return orgSlug ? { "X-Org-Slug": orgSlug } : undefined;
 }
 
-// ── Auth ─────────────────────────────────────
+// â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function signup(data: {
   email: string;
@@ -271,7 +384,7 @@ export async function login(data: { clerk_user_id: string }) {
   }>("/auth/login", { method: "POST", body: JSON.stringify(data) });
 }
 
-// ── Organisations ────────────────────────────
+// â”€â”€ Organisations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getOrg(slug: string, token?: string) {
   return fetchApi<OrgResponse>(`/orgs/${slug}`, {}, token);
@@ -285,7 +398,7 @@ export async function getOrgUsage(slug: string, token?: string) {
   return fetchApi<UsageResponse>(`/orgs/${slug}/usage`, {}, token);
 }
 
-// ── API Keys ─────────────────────────────────
+// â”€â”€ API Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function listKeys(token?: string, orgSlug?: string) {
   return fetchApi<ApiKeyItem[]>("/keys", {}, token, orgHeaders(orgSlug));
@@ -322,61 +435,71 @@ export async function rotateKey(keyId: string, token?: string, orgSlug?: string)
   );
 }
 
-// ── Analytics ────────────────────────────────
+// â”€â”€ Analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getAnalyticsOverview(
   period: string = "30d",
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   return fetchApi<OverviewResponse>(
     `/analytics/overview?period=${period}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
 export async function getSavingsTimeSeries(
   period: string = "30d",
   granularity: string = "day",
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   return fetchApi<{ data: SavingsDataPoint[] }>(
     `/analytics/savings?period=${period}&granularity=${granularity}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
 export async function getModelBreakdown(
   period: string = "30d",
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   return fetchApi<{ data: ModelBreakdown[] }>(
     `/analytics/models?period=${period}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
 export async function getCachePerformance(
   period: string = "30d",
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   return fetchApi<CachePerformance>(
     `/analytics/cache?period=${period}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
 export async function getLatencyPercentiles(
   period: string = "30d",
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   return fetchApi<LatencyPercentiles>(
     `/analytics/latency?period=${period}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
@@ -387,7 +510,8 @@ export async function getRequestLogs(
     model?: string;
     cache_hit?: boolean;
   } = {},
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   const searchParams = new URLSearchParams();
   if (params.page) searchParams.set("page", String(params.page));
@@ -398,15 +522,17 @@ export async function getRequestLogs(
   return fetchApi<PaginatedResponse<RequestLogEntry>>(
     `/analytics/requests?${searchParams}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
-export async function getForecast(days: number = 30, token?: string) {
+export async function getForecast(days: number = 30, token?: string, orgSlug?: string) {
   return fetchApi<ForecastResponse>(
     `/analytics/forecast?days=${days}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
@@ -417,19 +543,21 @@ export interface Recommendation {
   impact: string;
 }
 
-export async function getRecommendations(token?: string) {
+export async function getRecommendations(token?: string, orgSlug?: string) {
   return fetchApi<{ recommendations: Recommendation[] }>(
     "/analytics/recommendations",
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
-// ── Audit ───────────────────────────────────
+// â”€â”€ Audit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getAuditLog(
   params: { page?: number; limit?: number } = {},
-  token?: string
+  token?: string,
+  orgSlug?: string
 ) {
   const searchParams = new URLSearchParams();
   if (params.page) searchParams.set("page", String(params.page));
@@ -437,19 +565,28 @@ export async function getAuditLog(
   return fetchApi<PaginatedResponse<AuditLogEntry>>(
     `/governance/audit?${searchParams}`,
     {},
-    token
+    token,
+    orgHeaders(orgSlug)
   );
 }
 
-// ── Gateway ──────────────────────────────────
+// â”€â”€ Gateway â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export function getCompletionMetadata(response: ChatCompletionResponse) {
+  return response.asahio ?? response.asahi!;
+}
 
 export async function chatCompletions(
   data: {
     model?: string;
     messages: Array<{ role: string; content: string }>;
     routing_mode?: string;
+    intervention_mode?: string;
     quality_preference?: string;
     latency_preference?: string;
+    agent_id?: string;
+    session_id?: string;
+    model_endpoint_id?: string;
   },
   token?: string,
   orgSlug?: string
@@ -461,3 +598,117 @@ export async function chatCompletions(
     orgHeaders(orgSlug)
   );
 }
+
+export async function getBillingPlans(token?: string, orgSlug?: string) {
+  return fetchApi<BillingPlan[]>("/billing/plans", {}, token, orgHeaders(orgSlug));
+}
+
+export async function getBillingSubscription(token?: string, orgSlug?: string) {
+  return fetchApi<BillingSubscription>("/billing/subscription", {}, token, orgHeaders(orgSlug));
+}
+
+export async function getBillingUsage(token?: string, orgSlug?: string) {
+  return fetchApi<BillingUsage>("/billing/usage", {}, token, orgHeaders(orgSlug));
+}
+
+export async function getBillingInvoices(token?: string, orgSlug?: string) {
+  return fetchApi<{ data: InvoiceItem[] }>("/billing/invoices", {}, token, orgHeaders(orgSlug));
+}
+
+export async function createBillingCheckout(
+  data: { plan: string; success_url: string; cancel_url: string },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ checkout_url: string; mode: string }>(
+    "/billing/checkout",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function createBillingPortal(
+  data: { return_url: string },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ portal_url: string; mode: string }>(
+    "/billing/portal",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function listAgents(token?: string, orgSlug?: string) {
+  return fetchApi<{ data: AgentItem[] }>("/agents", {}, token, orgHeaders(orgSlug));
+}
+
+export async function createAgent(
+  data: {
+    name: string;
+    slug?: string;
+    description?: string;
+    routing_mode?: string;
+    intervention_mode?: string;
+    model_endpoint_id?: string | null;
+    metadata?: Record<string, unknown>;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<AgentItem>(
+    "/agents",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function listModelEndpoints(token?: string, orgSlug?: string) {
+  return fetchApi<{ data: ModelEndpointItem[] }>("/models", {}, token, orgHeaders(orgSlug));
+}
+
+export async function registerModelEndpoint(
+  data: {
+    name: string;
+    endpoint_type?: string;
+    provider?: string;
+    model_id: string;
+    endpoint_url?: string;
+    secret_reference?: string;
+    default_headers?: Record<string, string>;
+    capability_flags?: Record<string, unknown>;
+    fallback_model_id?: string;
+    validate_health?: boolean;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ id: string; health_status: string }>(
+    "/models/register",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getRoutingDecisions(
+  params: { agent_id?: string; limit?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  return fetchApi<{ data: RoutingDecisionItem[] }>(
+    `/routing/decisions?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+
+

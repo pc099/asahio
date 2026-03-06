@@ -1,8 +1,8 @@
-"""Redis cache service — exact match (Tier 1) + semantic (Tier 2).
+﻿"""Redis cache service â€” exact match (Tier 1) + semantic (Tier 2).
 
 Key schema:
-  Exact:    asahi:cache:exact:{org_id}:{query_hash}     → JSON
-  Semantic: asahi:cache:semantic:{org_id}:{embedding_md5} → JSON (with vector)
+  Exact:    asahio:cache:exact:{org_id}:{query_hash}     â†’ JSON
+  Semantic: asahio:cache:semantic:{org_id}:{embedding_md5} â†’ JSON (with vector)
 
 Semantic cache uses Redis Stack Vector Search (RediSearch) for
 approximate nearest-neighbor lookup with cosine similarity.
@@ -26,7 +26,7 @@ EXACT_CACHE_TTL = 3600  # 1 hour
 SEMANTIC_CACHE_TTL = 3600  # 1 hour
 SEMANTIC_THRESHOLD = 0.85  # Minimum cosine similarity for a semantic hit
 
-SEMANTIC_INDEX_NAME = "asahi_semantic_cache"
+SEMANTIC_INDEX_NAME = "asahio_semantic_cache"
 
 
 @dataclass
@@ -46,7 +46,7 @@ class RedisCache:
     def __init__(self, redis_client):
         self._redis = redis_client
 
-    # ── Exact Cache (Tier 1) ─────────────────
+    # â”€â”€ Exact Cache (Tier 1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def exact_get(self, org_id: str, query: str) -> Optional[CacheHit]:
         """Look up an exact-match cached response."""
@@ -89,9 +89,9 @@ class RedisCache:
 
     def _exact_key(self, org_id: str, query: str) -> str:
         query_hash = hashlib.sha256(query.strip().lower().encode()).hexdigest()
-        return f"asahi:cache:exact:{org_id}:{query_hash}"
+        return f"asahio:cache:exact:{org_id}:{query_hash}"
 
-    # ── Semantic Cache (Tier 2) ──────────────
+    # â”€â”€ Semantic Cache (Tier 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def setup_semantic_index(self) -> None:
         """Create the Redis vector search index if it doesn't exist."""
@@ -123,13 +123,13 @@ class RedisCache:
                 await self._redis.ft(SEMANTIC_INDEX_NAME).create_index(
                     schema,
                     definition=IndexDefinition(
-                        prefix=["asahi:cache:semantic:"],
+                        prefix=["asahio:cache:semantic:"],
                         index_type=IndexType.JSON,
                     ),
                 )
                 logger.info("Created semantic cache vector index")
             except Exception:
-                logger.warning("Could not create semantic index — semantic cache disabled")
+                logger.warning("Could not create semantic index â€” semantic cache disabled")
 
     async def semantic_get(
         self,
@@ -199,7 +199,7 @@ class RedisCache:
         try:
             embedding = embed(query)
             query_hash = hashlib.md5(query.encode()).hexdigest()
-            key = f"asahi:cache:semantic:{org_id}:{query_hash}"
+            key = f"asahio:cache:semantic:{org_id}:{query_hash}"
 
             await self._redis.json().set(
                 key,
@@ -217,7 +217,7 @@ class RedisCache:
         except Exception:
             logger.exception("Semantic cache set failed for org %s", org_id)
 
-    # ── Combined Lookup ──────────────────────
+    # â”€â”€ Combined Lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def get(
         self,
@@ -248,3 +248,4 @@ class RedisCache:
         """Store in both exact and semantic caches."""
         await self.exact_set(org_id, query, response, model_used)
         await self.semantic_set(org_id, query, response, model_used)
+

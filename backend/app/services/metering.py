@@ -1,10 +1,10 @@
-"""Redis-based real-time usage metering.
+﻿"""Redis-based real-time usage metering.
 
 Key schema:
-  Daily usage:  asahi:usage:{org_id}:{YYYYMMDD}  → HASH
+  Daily usage:  asahio:usage:{org_id}:{YYYYMMDD}  â†’ HASH
     Fields: requests, input_tokens, output_tokens, cache_hits, savings_usd
 
-  Budget:       asahi:budget:{org_id}:{YYYY-MM}   → HASH
+  Budget:       asahio:budget:{org_id}:{YYYY-MM}   â†’ HASH
     Fields: spent_usd, request_count
 
 All counters use atomic Redis operations (HINCRBY/HINCRBYFLOAT).
@@ -38,8 +38,8 @@ async def record_usage(
         return
 
     now = datetime.now(timezone.utc)
-    daily_key = f"asahi:usage:{org_id}:{now.strftime('%Y%m%d')}"
-    monthly_key = f"asahi:budget:{org_id}:{now.strftime('%Y-%m')}"
+    daily_key = f"asahio:usage:{org_id}:{now.strftime('%Y%m%d')}"
+    monthly_key = f"asahio:budget:{org_id}:{now.strftime('%Y-%m')}"
 
     try:
         pipe = redis.pipeline()
@@ -78,7 +78,7 @@ async def get_daily_usage(redis, org_id: str, date_str: str) -> dict:
     if not redis:
         return _empty_usage()
 
-    key = f"asahi:usage:{org_id}:{date_str}"
+    key = f"asahio:usage:{org_id}:{date_str}"
     try:
         data = await redis.hgetall(key)
         return {
@@ -104,7 +104,7 @@ async def get_monthly_budget(redis, org_id: str) -> dict:
         return {"spent_usd": 0.0, "request_count": 0}
 
     now = datetime.now(timezone.utc)
-    key = f"asahi:budget:{org_id}:{now.strftime('%Y-%m')}"
+    key = f"asahio:budget:{org_id}:{now.strftime('%Y-%m')}"
     try:
         data = await redis.hgetall(key)
         return {
@@ -161,3 +161,4 @@ def _empty_usage() -> dict:
         "savings_usd": 0.0,
         "cost_usd": 0.0,
     }
+

@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getRequestLogs } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
-import Link from "next/link";
 
 const tierColors: Record<string, string> = {
   exact: "bg-green-500/20 text-green-400",
@@ -12,12 +13,14 @@ const tierColors: Record<string, string> = {
   intermediate: "bg-purple-500/20 text-purple-400",
 };
 
-export default function GatewayPage({ params }: { params: { orgSlug: string } }) {
+export default function GatewayPage() {
   const [page, setPage] = useState(1);
+  const params = useParams();
+  const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
 
   const { data, isLoading } = useQuery({
-    queryKey: ["request-logs", page],
-    queryFn: () => getRequestLogs({ page, limit: 25 }),
+    queryKey: ["request-logs", orgSlug, page],
+    queryFn: () => getRequestLogs({ page, limit: 25 }, undefined, orgSlug),
   });
 
   return (
@@ -25,17 +28,19 @@ export default function GatewayPage({ params }: { params: { orgSlug: string } })
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gateway</h1>
-          <p className="text-sm text-muted-foreground">Request logs and playground</p>
+          <p className="text-sm text-muted-foreground">Inspect request logs and verify the live control-plane response path.</p>
         </div>
-        <Link href={`/${params.orgSlug}/gateway/playground`} className="rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark transition-colors">
+        <Link href={`/${orgSlug}/gateway/playground`} className="rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-asahio-dark">
           Open Playground
         </Link>
       </div>
 
-      <div className="rounded-lg border border-border bg-card shadow-sm overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
         {isLoading ? (
-          <div className="animate-pulse space-y-3 p-6">
-            {[1, 2, 3, 4, 5].map((i) => (<div key={i} className="h-10 rounded bg-muted" />))}
+          <div className="space-y-3 p-6 animate-pulse">
+            {[1, 2, 3, 4, 5].map((item) => (
+              <div key={item} className="h-10 rounded bg-muted" />
+            ))}
           </div>
         ) : !data || data.data.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
@@ -58,15 +63,17 @@ export default function GatewayPage({ params }: { params: { orgSlug: string } })
               </thead>
               <tbody>
                 {data.data.map((row) => (
-                  <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
+                  <tr key={row.id} className="border-b border-border last:border-0 transition-colors hover:bg-muted/50">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{new Date(row.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3 font-mono text-xs text-foreground">{row.model_used}</td>
                     <td className="px-4 py-3 text-muted-foreground">{row.input_tokens}/{row.output_tokens}</td>
                     <td className="px-4 py-3 text-muted-foreground">{formatCurrency(row.cost_without_asahi)}</td>
                     <td className="px-4 py-3 text-foreground">{formatCurrency(row.cost_with_asahi)}</td>
                     <td className="px-4 py-3">
                       {row.cache_hit ? (
-                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", tierColors[row.cache_tier || ""] || "bg-muted text-muted-foreground")}>{row.cache_tier || "hit"}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", tierColors[row.cache_tier || ""] || "bg-muted text-muted-foreground")}>
+                          {row.cache_tier || "hit"}
+                        </span>
                       ) : (
                         <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">miss</span>
                       )}
@@ -74,7 +81,9 @@ export default function GatewayPage({ params }: { params: { orgSlug: string } })
                     <td className="px-4 py-3">
                       {row.savings_pct !== null && row.savings_pct > 0 ? (
                         <span className="text-xs font-medium text-green-400">{row.savings_pct.toFixed(0)}%</span>
-                      ) : (<span className="text-xs text-muted-foreground">-</span>)}
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{row.latency_ms ? `${row.latency_ms}ms` : "-"}</td>
                   </tr>
@@ -85,8 +94,8 @@ export default function GatewayPage({ params }: { params: { orgSlug: string } })
               <div className="flex items-center justify-between border-t border-border px-4 py-3">
                 <span className="text-xs text-muted-foreground">Page {data.pagination.page} of {data.pagination.pages} ({data.pagination.total} total)</span>
                 <div className="flex gap-2">
-                  <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="rounded-md border border-border px-3 py-1 text-xs disabled:opacity-50 hover:bg-muted transition-colors">Previous</button>
-                  <button onClick={() => setPage((p) => p + 1)} disabled={page >= data.pagination.pages} className="rounded-md border border-border px-3 py-1 text-xs disabled:opacity-50 hover:bg-muted transition-colors">Next</button>
+                  <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="rounded-md border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50">Previous</button>
+                  <button onClick={() => setPage((current) => current + 1)} disabled={page >= data.pagination.pages} className="rounded-md border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50">Next</button>
                 </div>
               </div>
             )}

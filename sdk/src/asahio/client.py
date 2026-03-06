@@ -1,25 +1,4 @@
-"""Public SDK clients — drop-in replacements for the OpenAI Python client.
-
-Usage (sync):
-    from asahio import Asahio
-
-    client = Asahio(api_key="asahi_live_...")
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "Hello"}],
-    )
-    print(response.choices[0].message.content)
-    print(f"Saved: {response.asahi.savings_pct}%")
-
-Usage (async):
-    from asahio import AsyncAsahio
-
-    client = AsyncAsahio(api_key="asahi_live_...")
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "Hello"}],
-    )
-"""
+﻿"""Public ASAHIO SDK clients."""
 
 from __future__ import annotations
 
@@ -29,18 +8,59 @@ from typing import Any, Optional, Union, overload
 from asahio._base_client import AsyncBaseClient, BaseClient
 from asahio._exceptions import AsahioError
 from asahio._streaming import AsyncStream, Stream
-from asahio._version import __version__
-from asahio.types.chat import ChatCompletion, ChatCompletionChunk
+from asahio.types.chat import ChatCompletion
 
 _DEFAULT_BASE_URL = "https://api.asahio.dev"
 
 
-# ── Sync ─────────────────────────────────────────
+def _resolve_api_key(api_key: Optional[str]) -> str:
+    resolved = (
+        api_key
+        or os.environ.get("ASAHIO_API_KEY")
+        or os.environ.get("ASAHI_API_KEY")
+        or os.environ.get("ACORN_API_KEY")
+    )
+    if not resolved:
+        raise AsahioError(
+            "No API key provided. Pass api_key= or set ASAHIO_API_KEY."
+        )
+    return resolved
+
+
+def _build_body(
+    *,
+    messages: list[dict[str, str]],
+    model: str,
+    stream: bool,
+    routing_mode: str,
+    intervention_mode: str,
+    quality_preference: str,
+    latency_preference: str,
+    agent_id: Optional[str],
+    session_id: Optional[str],
+    model_endpoint_id: Optional[str],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        "routing_mode": routing_mode,
+        "intervention_mode": intervention_mode,
+        "quality_preference": quality_preference,
+        "latency_preference": latency_preference,
+        **extra,
+    }
+    if agent_id is not None:
+        body["agent_id"] = agent_id
+    if session_id is not None:
+        body["session_id"] = session_id
+    if model_endpoint_id is not None:
+        body["model_endpoint_id"] = model_endpoint_id
+    return body
 
 
 class Completions:
-    """Sync chat completions resource."""
-
     def __init__(self, client: BaseClient) -> None:
         self._client = client
 
@@ -51,9 +71,13 @@ class Completions:
         messages: list[dict[str, str]],
         model: str = "gpt-4o",
         stream: None = None,
-        routing_mode: str = "AUTOPILOT",
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
         quality_preference: str = "high",
         latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
         **kwargs: Any,
     ) -> ChatCompletion: ...
 
@@ -64,9 +88,13 @@ class Completions:
         messages: list[dict[str, str]],
         model: str = "gpt-4o",
         stream: bool = ...,
-        routing_mode: str = "AUTOPILOT",
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
         quality_preference: str = "high",
         latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, Stream]: ...
 
@@ -76,65 +104,51 @@ class Completions:
         messages: list[dict[str, str]],
         model: str = "gpt-4o",
         stream: Optional[bool] = None,
-        routing_mode: str = "AUTOPILOT",
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
         quality_preference: str = "high",
         latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, Stream]:
-        """Create a chat completion — identical to ``openai.chat.completions.create``."""
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "routing_mode": routing_mode,
-            "quality_preference": quality_preference,
-            "latency_preference": latency_preference,
-            **kwargs,
-        }
+        body = _build_body(
+            messages=messages,
+            model=model,
+            stream=bool(stream),
+            routing_mode=routing_mode,
+            intervention_mode=intervention_mode,
+            quality_preference=quality_preference,
+            latency_preference=latency_preference,
+            agent_id=agent_id,
+            session_id=session_id,
+            model_endpoint_id=model_endpoint_id,
+            extra=kwargs,
+        )
         if stream:
-            body["stream"] = True
             response = self._client.post_stream("/v1/chat/completions", json=body)
             return Stream(response)
-
-        body["stream"] = False
         response = self._client.post("/v1/chat/completions", json=body)
         return ChatCompletion.from_dict(response.json())
 
 
 class Chat:
-    """Sync chat resource (mirrors ``openai.chat``)."""
-
     def __init__(self, client: BaseClient) -> None:
         self.completions = Completions(client)
 
 
 class Asahio:
-    """Synchronous ASAHIO client — drop-in replacement for ``openai.OpenAI``.
-
-    Args:
-        api_key: Your ASAHIO API key (``asahi_live_...``). Falls back to
-            the ``ASAHIO_API_KEY`` environment variable.
-        base_url: Override the default API endpoint.
-        timeout: Request timeout in seconds.
-        max_retries: Number of automatic retries on 429 / 5xx.
-        org_slug: Organisation slug sent via ``X-Org-Slug`` header.
-    """
-
-    chat: Chat
-
     def __init__(
         self,
-        api_key: Optional[str] = None,
         *,
+        api_key: Optional[str] = None,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = 120.0,
         max_retries: int = 2,
         org_slug: Optional[str] = None,
     ) -> None:
-        resolved_key = api_key or os.environ.get("ASAHIO_API_KEY")
-        if not resolved_key:
-            raise AsahioError(
-                "No API key provided. Pass api_key= or set the ASAHIO_API_KEY env var."
-            )
+        resolved_key = _resolve_api_key(api_key)
         self._client = BaseClient(
             base_url=base_url,
             api_key=resolved_key,
@@ -147,21 +161,50 @@ class Asahio:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> Asahio:
+    def __enter__(self) -> "Asahio":
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.close()
 
 
-# ── Async ────────────────────────────────────────
-
-
 class AsyncCompletions:
-    """Async chat completions resource."""
-
     def __init__(self, client: AsyncBaseClient) -> None:
         self._client = client
+
+    @overload
+    async def create(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model: str = "gpt-4o",
+        stream: None = None,
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
+        quality_preference: str = "high",
+        latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ChatCompletion: ...
+
+    @overload
+    async def create(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model: str = "gpt-4o",
+        stream: bool = ...,
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
+        quality_preference: str = "high",
+        latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Union[ChatCompletion, AsyncStream]: ...
 
     async def create(
         self,
@@ -169,66 +212,51 @@ class AsyncCompletions:
         messages: list[dict[str, str]],
         model: str = "gpt-4o",
         stream: Optional[bool] = None,
-        routing_mode: str = "AUTOPILOT",
+        routing_mode: str = "AUTO",
+        intervention_mode: str = "OBSERVE",
         quality_preference: str = "high",
         latency_preference: str = "normal",
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        model_endpoint_id: Optional[str] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, AsyncStream]:
-        """Create a chat completion — async variant."""
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "routing_mode": routing_mode,
-            "quality_preference": quality_preference,
-            "latency_preference": latency_preference,
-            **kwargs,
-        }
+        body = _build_body(
+            messages=messages,
+            model=model,
+            stream=bool(stream),
+            routing_mode=routing_mode,
+            intervention_mode=intervention_mode,
+            quality_preference=quality_preference,
+            latency_preference=latency_preference,
+            agent_id=agent_id,
+            session_id=session_id,
+            model_endpoint_id=model_endpoint_id,
+            extra=kwargs,
+        )
         if stream:
-            body["stream"] = True
-            response = await self._client.post_stream(
-                "/v1/chat/completions", json=body
-            )
+            response = await self._client.post_stream("/v1/chat/completions", json=body)
             return AsyncStream(response)
-
-        body["stream"] = False
         response = await self._client.post("/v1/chat/completions", json=body)
         return ChatCompletion.from_dict(response.json())
 
 
 class AsyncChat:
-    """Async chat resource."""
-
     def __init__(self, client: AsyncBaseClient) -> None:
         self.completions = AsyncCompletions(client)
 
 
 class AsyncAsahio:
-    """Asynchronous ASAHIO client — drop-in replacement for ``openai.AsyncOpenAI``.
-
-    Args:
-        api_key: Your ASAHIO API key. Falls back to ``ASAHIO_API_KEY`` env var.
-        base_url: Override the default API endpoint.
-        timeout: Request timeout in seconds.
-        max_retries: Number of automatic retries on 429 / 5xx.
-        org_slug: Organisation slug sent via ``X-Org-Slug`` header.
-    """
-
-    chat: AsyncChat
-
     def __init__(
         self,
-        api_key: Optional[str] = None,
         *,
+        api_key: Optional[str] = None,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = 120.0,
         max_retries: int = 2,
         org_slug: Optional[str] = None,
     ) -> None:
-        resolved_key = api_key or os.environ.get("ASAHIO_API_KEY")
-        if not resolved_key:
-            raise AsahioError(
-                "No API key provided. Pass api_key= or set the ASAHIO_API_KEY env var."
-            )
+        resolved_key = _resolve_api_key(api_key)
         self._client = AsyncBaseClient(
             base_url=base_url,
             api_key=resolved_key,
@@ -241,8 +269,19 @@ class AsyncAsahio:
     async def close(self) -> None:
         await self._client.close()
 
-    async def __aenter__(self) -> AsyncAsahio:
+    async def __aenter__(self) -> "AsyncAsahio":
         return self
 
     async def __aexit__(self, *args: Any) -> None:
         await self.close()
+
+
+Asahi = Asahio
+AsyncAsahi = AsyncAsahio
+
+
+Acorn = Asahio
+AsyncAcorn = AsyncAsahio
+
+
+

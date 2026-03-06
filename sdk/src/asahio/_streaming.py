@@ -1,11 +1,4 @@
-"""SSE stream parsers for chat completion chunks.
-
-Provides `Stream` (sync) and `AsyncStream` that yield `ChatCompletionChunk`
-objects from an `httpx` streaming response using the OpenAI SSE protocol:
-
-    data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk",...}
-    data: [DONE]
-"""
+﻿"""SSE stream parsers for chat completion chunks."""
 
 from __future__ import annotations
 
@@ -18,8 +11,6 @@ from asahio.types.chat import ChatCompletionChunk
 
 
 class Stream:
-    """Synchronous SSE iterator over chat completion chunks."""
-
     def __init__(self, response: httpx.Response) -> None:
         self._response = response
 
@@ -39,8 +30,6 @@ class Stream:
 
 
 class AsyncStream:
-    """Asynchronous SSE iterator over chat completion chunks."""
-
     def __init__(self, response: httpx.Response) -> None:
         self._response = response
 
@@ -59,19 +48,10 @@ class AsyncStream:
         await self._response.aclose()
 
 
-# ── Internal helpers ─────────────────────────────
-
-_DONE = object()  # sentinel
+_DONE = object()
 
 
 def _parse_sse_line(line: str) -> ChatCompletionChunk | object | None:
-    """Parse a single SSE line.
-
-    Returns:
-        ChatCompletionChunk for a valid data line,
-        _DONE sentinel for `data: [DONE]`,
-        None for empty/comment/non-data lines.
-    """
     line = line.strip()
     if not line or line.startswith(":"):
         return None
@@ -85,6 +65,9 @@ def _parse_sse_line(line: str) -> ChatCompletionChunk | object | None:
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
+        return None
+
+    if not isinstance(data, dict) or data.get("object") != "chat.completion.chunk":
         return None
 
     return ChatCompletionChunk.from_dict(data)

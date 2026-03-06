@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import { Toaster } from "sonner";
@@ -7,9 +7,9 @@ import { AuthSetup } from "@/components/providers/auth-setup";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ASAHIO - LLM Inference Cost Optimizer",
+  title: "ASAHIO - Enterprise Agent Control Plane",
   description:
-    "Intelligent routing and caching to cut LLM inference costs by 85-97%. Drop-in OpenAI replacement.",
+    "Routing, caching, billing, and observability for production LLM agents and inference systems.",
 };
 
 export default function RootLayout({
@@ -44,3 +44,4 @@ export default function RootLayout({
     </ClerkProvider>
   );
 }
+

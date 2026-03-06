@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
 import { getCachePerformance } from "@/lib/api";
 import { cn, formatPercent } from "@/lib/utils";
-import { Database, Layers, Brain, GitBranch } from "lucide-react";
+import { Brain, Database, GitBranch, Layers } from "lucide-react";
 
 const tierConfig = {
   exact: {
@@ -32,14 +33,14 @@ const tierConfig = {
   },
 } as const;
 
-export default function CachePage({
-  params,
-}: {
-  params: { orgSlug: string };
-}) {
+export default function CachePage() {
+  const params = useParams();
+  const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
+
   const { data: cache, isLoading } = useQuery({
-    queryKey: ["cache-performance", params.orgSlug],
-    queryFn: () => getCachePerformance("30d"),
+    queryKey: ["cache-performance", orgSlug],
+    queryFn: () => getCachePerformance("30d", undefined, orgSlug),
+    enabled: Boolean(orgSlug),
   });
 
   return (
@@ -53,17 +54,15 @@ export default function CachePage({
 
       {isLoading ? (
         <div className="space-y-6">
-          {/* Overall skeleton */}
           <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
             <div className="animate-pulse space-y-4">
               <div className="h-6 w-40 rounded bg-muted" />
               <div className="h-16 w-full rounded bg-muted" />
             </div>
           </div>
-          {/* Tier skeletons */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="rounded-lg border border-border bg-card p-6 shadow-sm">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="rounded-lg border border-border bg-card p-6 shadow-sm">
                 <div className="animate-pulse space-y-4">
                   <div className="h-5 w-32 rounded bg-muted" />
                   <div className="h-10 w-24 rounded bg-muted" />
@@ -82,7 +81,6 @@ export default function CachePage({
         </div>
       ) : (
         <>
-          {/* Overall hit rate */}
           <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-asahio/20">
@@ -110,7 +108,6 @@ export default function CachePage({
             </div>
           </div>
 
-          {/* Per-tier breakdown */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {(["exact", "semantic", "intermediate"] as const).map((tier) => {
               const config = tierConfig[tier];

@@ -1,4 +1,4 @@
-"""Authentication middleware — handles both JWT (dashboard) and API key (SDK) auth.
+﻿"""Authentication middleware â€” handles both JWT (dashboard) and API key (SDK) auth.
 
 Rules:
 1. Public paths skip auth entirely: /health, /auth/*, /docs, /openapi.json
@@ -6,7 +6,7 @@ Rules:
 3. Gateway paths (/v1/*) require API key OR JWT
 4. On success: attach org_id, user_id, org, plan, auth_type to request.state
 5. API key auth: SHA-256 hash incoming Bearer token, lookup in api_keys table
-   — with Redis cache (5min TTL) to avoid DB hit per request
+   â€” with Redis cache (5min TTL) to avoid DB hit per request
 6. JWT auth: Verify Clerk JWT signature via JWKS, resolve user + org
 """
 
@@ -33,7 +33,7 @@ from app.db.models import ApiKey, Member, Organisation, User
 logger = logging.getLogger(__name__)
 
 _AUTH_CACHE_TTL = 300  # 5 minutes
-_AUTH_CACHE_PREFIX = "asahi:auth:key:"
+_AUTH_CACHE_PREFIX = "asahio:auth:key:"
 
 
 class _CachedOrg:
@@ -78,7 +78,7 @@ async def _set_cached_auth(redis: Any, key_hash: str, data: dict[str, Any]) -> N
         logger.debug("Redis auth cache write failed for key %s...", key_hash[:8])
 
 
-# Clerk JWKS client — cached, fetches public keys to verify JWT signatures.
+# Clerk JWKS client â€” cached, fetches public keys to verify JWT signatures.
 _jwks_client: PyJWKClient | None = None
 
 
@@ -93,7 +93,7 @@ def _get_jwks_client() -> PyJWKClient | None:
         # Derive from Clerk publishable key or fall back to None
         pk = settings.clerk_publishable_key
         if pk:
-            # pk_test_<base64> or pk_live_<base64> — extract the frontend API domain
+            # pk_test_<base64> or pk_live_<base64> â€” extract the frontend API domain
             import base64
             try:
                 # The publishable key encodes the Clerk frontend API domain
@@ -118,13 +118,20 @@ PUBLIC_PATH_PREFIXES = (
     "/openapi.json",
     "/redoc",
 )
+PUBLIC_EXACT_PATHS = {
+    "/billing/webhooks",
+}
 
-# Scope → allowed path prefixes. "*" scope grants full access.
+# Scope â†’ allowed path prefixes. "*" scope grants full access.
 SCOPE_PATH_MAP: dict[str, list[str]] = {
     "inference": ["/v1/"],
     "analytics": ["/analytics/"],
     "keys": ["/keys"],
     "governance": ["/governance/"],
+    "billing": ["/billing/"],
+    "agents": ["/agents"],
+    "models": ["/models"],
+    "routing": ["/routing/"],
     "admin": ["/admin/"],
 }
 
@@ -152,12 +159,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for public paths
         path = request.url.path
-        if any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES):
+        if path in PUBLIC_EXACT_PATHS or any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
+        if not auth_header:
+            raw_api_key = request.headers.get("x-api-key", "")
+            if raw_api_key:
+                auth_header = f"Bearer {raw_api_key}"
 
-        if auth_header.startswith("Bearer asahi_"):
+        if auth_header.startswith("Bearer asahio_") or auth_header.startswith("Bearer asahi_"):
             return await self._auth_api_key(auth_header, request, call_next)
         elif auth_header.startswith("Bearer ey"):
             return await self._auth_jwt(auth_header, request, call_next)
@@ -175,7 +186,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def _auth_api_key(
         self, auth_header: str, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        """Authenticate via ASAHI API key (for SDK/gateway requests).
+        """Authenticate via ASAHIO API key (for SDK/gateway requests).
 
         Uses a Redis cache (5min TTL) to avoid a DB round-trip on every request.
         On cache miss, falls back to PostgreSQL and populates the cache.
@@ -185,7 +196,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         redis = getattr(request.app.state, "redis", None)
 
-        # ── Try Redis cache first ────────────────
+        # â”€â”€ Try Redis cache first â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         cached = await _get_cached_auth(redis, key_hash)
         if cached:
             # Enforce scopes from cached data
@@ -209,7 +220,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
             return await call_next(request)
 
-        # ── Cache miss — fall back to DB ─────────
+        # â”€â”€ Cache miss â€” fall back to DB â”€â”€â”€â”€â”€â”€â”€â”€â”€
         async with async_session_factory() as session:
             result = await session.execute(
                 select(ApiKey).where(
@@ -247,7 +258,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.plan = org.plan
             request.state.auth_type = "api_key"
 
-            # ── Populate Redis cache ─────────────
+            # â”€â”€ Populate Redis cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             cache_data = {
                 "org_id": str(api_key.organisation_id),
                 "api_key_id": str(api_key.id),
@@ -282,8 +293,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     options={"verify_aud": False},
                 )
             else:
-                # Fallback: no JWKS configured — decode without verification (dev only)
-                logger.warning("JWKS not configured — skipping JWT signature verification")
+                # Fallback: no JWKS configured â€” decode without verification (dev only)
+                logger.warning("JWKS not configured â€” skipping JWT signature verification")
                 payload = jwt.decode(
                     token,
                     options={"verify_signature": False},
@@ -374,7 +385,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.plan = org.plan
                 request.state.role = member.role
             else:
-                # No org in JWT — get first org the user belongs to
+                # No org in JWT â€” get first org the user belongs to
                 member_result = await session.execute(
                     select(Member).where(Member.user_id == user.id).limit(1)
                 )
@@ -409,3 +420,7 @@ async def _update_key_last_used(api_key_id: uuid.UUID) -> None:
             await session.commit()
     except Exception:
         logger.exception("Failed to update api key last_used_at")
+
+
+
+

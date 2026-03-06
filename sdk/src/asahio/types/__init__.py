@@ -1,7 +1,8 @@
-"""Public type re-exports."""
+﻿"""Public type re-exports."""
 
 from asahio.types.chat import (
     AsahiMetadata,
+    AsahioMetadata,
     ChatCompletion,
     ChatCompletionChunk,
     Choice,
@@ -11,6 +12,7 @@ from asahio.types.chat import (
 )
 
 __all__ = [
+    "AsahioMetadata",
     "AsahiMetadata",
     "ChatCompletion",
     "ChatCompletionChunk",

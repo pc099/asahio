@@ -1,13 +1,13 @@
-"""Analytics routes — all org-scoped.
+﻿"""Analytics routes â€” all org-scoped.
 
-GET /analytics/overview      — KPI cards
-GET /analytics/savings       — Time series savings data
-GET /analytics/models        — Cost breakdown by model
-GET /analytics/cache         — Cache performance per tier
-GET /analytics/latency       — p50/p90/p99 latency percentiles
-GET /analytics/requests      — Paginated request log
-GET /analytics/forecast      — Cost forecast
-GET /analytics/recommendations — Optimization suggestions
+GET /analytics/overview      â€” KPI cards
+GET /analytics/savings       â€” Time series savings data
+GET /analytics/models        â€” Cost breakdown by model
+GET /analytics/cache         â€” Cache performance per tier
+GET /analytics/latency       â€” p50/p90/p99 latency percentiles
+GET /analytics/requests      â€” Paginated request log
+GET /analytics/forecast      â€” Cost forecast
+GET /analytics/recommendations â€” Optimization suggestions
 """
 
 import uuid
@@ -25,7 +25,7 @@ from app.db.models import CacheType, RequestLog, UsageSnapshot
 router = APIRouter()
 
 
-# ── Helpers ───────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _get_org_id(request: Request) -> uuid.UUID:
@@ -41,7 +41,7 @@ def _period_to_timedelta(period: str) -> timedelta:
     return timedelta(days=days)
 
 
-# ── Overview ──────────────────────────────────
+# â”€â”€ Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class OverviewResponse(BaseModel):
@@ -170,7 +170,7 @@ async def _aggregate_period(
     }
 
 
-# ── Savings Time Series ──────────────────────
+# â”€â”€ Savings Time Series â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/savings")
@@ -221,7 +221,7 @@ async def analytics_savings(
     }
 
 
-# ── Model Breakdown ──────────────────────────
+# â”€â”€ Model Breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/models")
@@ -264,7 +264,7 @@ async def analytics_models(
     }
 
 
-# ── Cache Performance ────────────────────────
+# â”€â”€ Cache Performance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/cache")
@@ -303,7 +303,7 @@ async def analytics_cache(
     }
 
 
-# ── Latency Percentiles ─────────────────────
+# â”€â”€ Latency Percentiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/latency")
@@ -340,7 +340,7 @@ async def analytics_latency(
     }
 
 
-# ── Request Log (Paginated) ─────────────────
+# â”€â”€ Request Log (Paginated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/requests")
@@ -410,7 +410,7 @@ async def analytics_requests(
     }
 
 
-# ── Forecast ─────────────────────────────────
+# â”€â”€ Forecast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/forecast")
@@ -450,7 +450,7 @@ async def analytics_forecast(
     }
 
 
-# ── Recommendations ──────────────────────────
+# â”€â”€ Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/recommendations")
@@ -489,8 +489,8 @@ async def analytics_recommendations(
     if total > 50000:
         recommendations.append({
             "type": "routing",
-            "title": "Use AUTOPILOT routing mode",
-            "description": "With your request volume, automatic model routing could save 30-60% by selecting cheaper models for simple tasks.",
+            "title": "Use AUTO routing mode",
+            "description": "With your request volume, AUTO routing could save 30-60% by selecting cheaper models for simpler tasks.",
             "impact": "high",
         })
 
@@ -503,3 +503,4 @@ async def analytics_recommendations(
         })
 
     return {"recommendations": recommendations}
+

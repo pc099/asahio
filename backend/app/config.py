@@ -1,4 +1,4 @@
-"""Application settings loaded from environment variables.
+﻿"""Application settings loaded from environment variables.
 
 Uses pydantic-settings for validation and .env file support.
 Access the singleton via get_settings().
@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Central configuration for the ASAHI SaaS backend."""
+    """Central configuration for the ASAHIO backend."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://asahi:asahi_dev_password@localhost:5432/asahi"
+    database_url: str = "postgresql+asyncpg://asahio:asahio_dev_password@localhost:5432/asahio"
 
     @model_validator(mode="after")
     def _normalize_database_url(self) -> "Settings":
@@ -42,16 +42,16 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
-    # Debug — when True, /v1/chat/completions returns mock LLM responses (no API keys needed).
+    # Debug â€” when True, /v1/chat/completions returns mock LLM responses (no API keys needed).
     # Set DEBUG=false (and OPENAI_API_KEY and/or ANTHROPIC_API_KEY) for real inference.
     debug: bool = False
 
-    # CORS — allowed origins for browser requests (e.g. frontend on Vercel).
+    # CORS â€” allowed origins for browser requests (e.g. frontend on Vercel).
     # Env var: CORS_ORIGINS=https://your-app.vercel.app
     # Comma-separated: CORS_ORIGINS=https://app.vercel.app,https://custom.com
     # JSON array: CORS_ORIGINS=["https://app.vercel.app"]
     # Stored as str so pydantic-settings doesn't JSON-decode plain comma values.
-    cors_origins: str = "https://asahi-git-master-chaitanya-varmas-projects.vercel.app,https://acon-eta.vercel.app/"
+    cors_origins: str = "https://app.asahio.dev,https://asahio.vercel.app"
 
     def get_cors_origins(self) -> list[str]:
         """Parse CORS origins from string: JSON array or comma-separated."""
@@ -104,3 +104,4 @@ def get_settings() -> Settings:
 def reset_settings() -> None:
     """Clear the settings cache. Used in tests."""
     get_settings.cache_clear()
+

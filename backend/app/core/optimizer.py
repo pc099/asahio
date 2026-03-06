@@ -1,26 +1,32 @@
-"""Bridge to the existing src/ InferenceOptimizer.
-
-Provides a thin wrapper that adapts the existing synchronous
-InferenceOptimizer for use in the async FastAPI gateway.
-Integrates Redis cache (exact + semantic) before falling through
-to the src/ optimizer.
-"""
+﻿"""Bridge to the legacy optimizer used by the canonical ASAHIO backend."""
 
 import asyncio
 import logging
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Add the project root to sys.path so we can import from src/
 PROJECT_ROOT = str(Path(__file__).resolve().parents[3])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+_ROUTING_MODE_ALIASES = {
+    "AUTOPILOT": "AUTO",
+    "AUTO": "AUTO",
+    "GUIDED": "GUIDED",
+    "EXPLICIT": "EXPLICIT",
+}
+
+_LEGACY_ROUTING_MODES = {
+    "AUTO": "autopilot",
+    "GUIDED": "guided",
+    "EXPLICIT": "explicit",
+}
 
 
 @dataclass
@@ -28,10 +34,15 @@ class GatewayResult:
     """Normalized result from the optimizer for the gateway response."""
 
     response: str = ""
+    request_id: Optional[str] = None
     model_used: str = "unknown"
     model_requested: Optional[str] = None
     provider: Optional[str] = None
     routing_mode: Optional[str] = None
+    intervention_mode: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_session_id: Optional[str] = None
+    model_endpoint_id: Optional[str] = None
     input_tokens: int = 0
     output_tokens: int = 0
     cost_without_asahi: float = 0.0
@@ -42,11 +53,25 @@ class GatewayResult:
     cache_tier: Optional[str] = None
     latency_ms: Optional[int] = None
     routing_reason: Optional[str] = None
+    routing_factors: dict = field(default_factory=dict)
+    routing_confidence: Optional[float] = None
+    policy_action: str = "observe_only"
+    policy_reason: Optional[str] = None
     error_message: Optional[str] = None
 
 
+def normalize_routing_mode(value: Optional[str]) -> str:
+    if not value:
+        return "AUTO"
+    return _ROUTING_MODE_ALIASES.get(value.upper(), value.upper())
+
+
+def _legacy_routing_mode(value: Optional[str]) -> str:
+    normalized = normalize_routing_mode(value)
+    return _LEGACY_ROUTING_MODES.get(normalized, "autopilot")
+
+
 def _create_optimizer(use_mock: bool = True):
-    """Create an InferenceOptimizer instance from the existing src/ code."""
     try:
         from src.core.optimizer import InferenceOptimizer
 
@@ -58,32 +83,33 @@ def _create_optimizer(use_mock: bool = True):
 
 @lru_cache(maxsize=1)
 def get_optimizer_instance(use_mock: bool = True):
-    """Get or create a cached optimizer instance."""
     return _create_optimizer(use_mock=use_mock)
 
 
 async def run_inference(
     prompt: str,
-    routing_mode: str = "autopilot",
+    routing_mode: str = "AUTO",
+    intervention_mode: str = "OBSERVE",
     quality_preference: Optional[str] = "high",
     latency_preference: Optional[str] = "normal",
     model_override: Optional[str] = None,
     org_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_session_id: Optional[str] = None,
+    model_endpoint_id: Optional[str] = None,
+    provider_hint: Optional[str] = None,
     use_mock: bool = True,
     redis=None,
 ) -> GatewayResult:
-    """Run inference with Redis cache check, then fall through to optimizer.
-
-    Flow:
-    1. Check Redis exact cache (Tier 1)
-    2. Check Redis semantic cache (Tier 2)
-    3. On miss: call existing InferenceOptimizer.infer()
-    4. Store result in Redis cache
-    5. Return normalized GatewayResult
-    """
     start_time = time.time()
+    normalized_routing_mode = normalize_routing_mode(routing_mode)
+    policy_reason = None
+    if intervention_mode.upper() != "OBSERVE":
+        policy_reason = (
+            "Intervention mode is recorded for auditability. "
+            "The intervention ladder is not yet active in the runtime path."
+        )
 
-    # ── Redis Cache Check ─────────────────────
     if redis and org_id:
         try:
             from app.services.cache import RedisCache
@@ -102,7 +128,12 @@ async def run_inference(
                     response=hit.response,
                     model_used=hit.model_used,
                     model_requested=model_override,
-                    routing_mode=routing_mode.upper(),
+                    provider=provider_hint,
+                    routing_mode=normalized_routing_mode,
+                    intervention_mode=intervention_mode.upper(),
+                    agent_id=agent_id,
+                    agent_session_id=agent_session_id,
+                    model_endpoint_id=model_endpoint_id,
                     input_tokens=0,
                     output_tokens=0,
                     cost_without_asahi=0.0,
@@ -113,13 +144,14 @@ async def run_inference(
                     cache_tier=hit.cache_tier,
                     latency_ms=elapsed,
                     routing_reason=f"Cache {hit.cache_tier} hit",
+                    routing_factors={"cache": hit.cache_tier},
+                    policy_action="observe_only",
+                    policy_reason=policy_reason,
                 )
         except Exception:
             logger.exception("Redis cache check failed, falling through to optimizer")
 
-    # ── Optimizer Inference ───────────────────
     optimizer = get_optimizer_instance(use_mock=use_mock)
-
     if not optimizer:
         return GatewayResult(
             response="Optimizer unavailable",
@@ -132,7 +164,7 @@ async def run_inference(
             None,
             lambda: optimizer.infer(
                 prompt=prompt,
-                routing_mode=routing_mode.lower(),
+                routing_mode=_legacy_routing_mode(normalized_routing_mode),
                 quality_preference=quality_preference,
                 latency_preference=latency_preference,
                 model_override=model_override,
@@ -141,12 +173,9 @@ async def run_inference(
         )
 
         elapsed = int((time.time() - start_time) * 1000)
-
-        # Map cache_tier int to string
         cache_tier_map = {0: None, 1: "exact", 2: "semantic", 3: "intermediate"}
         cache_tier = cache_tier_map.get(result.cache_tier, None)
 
-        # Compute savings
         cost_original = result.cost_original or result.cost * 3
         cost_with = result.cost
         savings = cost_original - cost_with
@@ -154,9 +183,15 @@ async def run_inference(
 
         gateway_result = GatewayResult(
             response=result.response,
+            request_id=getattr(result, "request_id", None),
             model_used=result.model_used,
             model_requested=model_override,
-            routing_mode=routing_mode.upper(),
+            provider=provider_hint,
+            routing_mode=normalized_routing_mode,
+            intervention_mode=intervention_mode.upper(),
+            agent_id=agent_id,
+            agent_session_id=agent_session_id,
+            model_endpoint_id=model_endpoint_id,
             input_tokens=result.tokens_input,
             output_tokens=result.tokens_output,
             cost_without_asahi=cost_original,
@@ -167,28 +202,27 @@ async def run_inference(
             cache_tier=cache_tier,
             latency_ms=elapsed,
             routing_reason=result.routing_reason,
+            routing_factors={
+                "legacy_mode": _legacy_routing_mode(normalized_routing_mode),
+                "quality_preference": quality_preference,
+                "latency_preference": latency_preference,
+            },
+            policy_action="observe_only",
+            policy_reason=policy_reason,
         )
 
-        # ── Store in Redis Cache (fire-and-forget) ──
         if redis and org_id and result.response and not result.cache_hit:
             asyncio.create_task(
                 _store_in_cache(redis, org_id, prompt, result.response, result.model_used)
             )
 
         return gateway_result
-
-    except Exception as e:
+    except Exception as exc:
         logger.exception("Inference failed for org %s", org_id)
-        return GatewayResult(
-            response="",
-            error_message=str(e),
-        )
+        return GatewayResult(response="", error_message=str(exc))
 
 
-async def _store_in_cache(
-    redis, org_id: str, query: str, response: str, model_used: str
-) -> None:
-    """Fire-and-forget: store inference result in Redis cache."""
+async def _store_in_cache(redis, org_id: str, query: str, response: str, model_used: str) -> None:
     try:
         from app.services.cache import RedisCache
 

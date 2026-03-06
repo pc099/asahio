@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   getAnalyticsOverview,
@@ -43,46 +44,44 @@ const IMPACT_BADGE: Record<string, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
-export default function AnalyticsPage({
-  params,
-}: {
-  params: { orgSlug: string };
-}) {
+export default function AnalyticsPage() {
+  const params = useParams();
+  const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
   const [period, setPeriod] = useState("30d");
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ["analytics-overview", params.orgSlug, period],
-    queryFn: () => getAnalyticsOverview(period),
+    queryKey: ["analytics-overview", orgSlug, period],
+    queryFn: () => getAnalyticsOverview(period, undefined, orgSlug),
   });
 
   const { data: savings } = useQuery({
-    queryKey: ["analytics-savings", params.orgSlug, period],
-    queryFn: () => getSavingsTimeSeries(period, "day"),
+    queryKey: ["analytics-savings", orgSlug, period],
+    queryFn: () => getSavingsTimeSeries(period, "day", undefined, orgSlug),
   });
 
   const { data: models } = useQuery({
-    queryKey: ["analytics-models", params.orgSlug, period],
-    queryFn: () => getModelBreakdown(period),
+    queryKey: ["analytics-models", orgSlug, period],
+    queryFn: () => getModelBreakdown(period, undefined, orgSlug),
   });
 
   const { data: cache, isLoading: cacheLoading } = useQuery({
-    queryKey: ["analytics-cache", params.orgSlug, period],
-    queryFn: () => getCachePerformance(period),
+    queryKey: ["analytics-cache", orgSlug, period],
+    queryFn: () => getCachePerformance(period, undefined, orgSlug),
   });
 
   const { data: latency, isLoading: latencyLoading } = useQuery({
-    queryKey: ["analytics-latency", params.orgSlug, period],
-    queryFn: () => getLatencyPercentiles(period),
+    queryKey: ["analytics-latency", orgSlug, period],
+    queryFn: () => getLatencyPercentiles(period, undefined, orgSlug),
   });
 
   const { data: forecast, isLoading: forecastLoading } = useQuery({
-    queryKey: ["analytics-forecast", params.orgSlug],
-    queryFn: () => getForecast(30),
+    queryKey: ["analytics-forecast", orgSlug],
+    queryFn: () => getForecast(30, undefined, orgSlug),
   });
 
   const { data: recommendationsData, isLoading: recommendationsLoading } = useQuery({
-    queryKey: ["analytics-recommendations", params.orgSlug],
-    queryFn: () => getRecommendations(),
+    queryKey: ["analytics-recommendations", orgSlug],
+    queryFn: () => getRecommendations(undefined, orgSlug),
   });
 
   return (
@@ -403,7 +402,7 @@ export default function AnalyticsPage({
                 All optimized
               </p>
               <p className="text-xs text-muted-foreground">
-                No recommendations right now — your setup is performing well.
+                No recommendations right now â€” your setup is performing well.
               </p>
             </div>
           </div>
@@ -445,3 +444,6 @@ export default function AnalyticsPage({
     </div>
   );
 }
+
+
+

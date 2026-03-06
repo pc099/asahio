@@ -1,14 +1,14 @@
-[build-system]
+﻿[build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "asahio-ai"
 version = "0.1.0"
-description = "LLM inference optimization — 85-97% cost savings"
+description = "Enterprise LLM agent control plane SDK for routing, caching, and observability"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-keywords = ["llm", "ai", "cost-optimization", "caching", "routing"]
+keywords = ["llm", "ai", "agents", "routing", "observability"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -29,4 +29,4 @@ Documentation = "https://docs.asahio.dev"
 Repository = "https://github.com/asahio-ai/asahio-python"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/asahio"]
+packages = ["src/asahio", "src/asahi", "src/acorn"]

@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import {
   BarChart2,
+  BookOpen,
   CreditCard,
   Database,
   Key,
@@ -17,7 +18,9 @@ const navItems = [
   { icon: Zap, label: "Gateway", path: "/gateway" },
   { icon: Database, label: "Cache", path: "/cache" },
   { icon: BarChart2, label: "Analytics", path: "/analytics" },
+  { icon: CreditCard, label: "Billing", path: "/billing" },
   { icon: Key, label: "API Keys", path: "/keys" },
+  { icon: BookOpen, label: "Docs", path: "/docs" },
 ];
 
 const bottomItems = [
@@ -38,12 +41,10 @@ interface NavProps {
 }
 
 function SidebarNav({ orgSlug, currentPath, onItemClick }: NavProps) {
-  const isActive = (path: string) =>
-    currentPath.includes(`/${orgSlug}${path}`);
+  const isActive = (path: string) => currentPath.includes(`/${orgSlug}${path}`);
 
   return (
     <>
-      {/* Nav items */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
           const href = `/${orgSlug}${item.path}`;
@@ -67,7 +68,6 @@ function SidebarNav({ orgSlug, currentPath, onItemClick }: NavProps) {
         })}
       </nav>
 
-      {/* Bottom nav */}
       <div className="border-t border-border px-3 py-4">
         {bottomItems.map((item) => {
           const href = `/${orgSlug}${item.path}`;
@@ -102,7 +102,6 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <>
-      {/* Desktop sidebar */}
       <aside className="hidden w-64 flex-col border-r border-border bg-sidebar md:flex">
         <div className="flex h-14 items-center gap-2 border-b border-border px-6">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-asahio">
@@ -116,7 +115,6 @@ export function Sidebar({
         </div>
       </aside>
 
-      {/* Mobile sidebar overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
           <button
@@ -138,9 +136,7 @@ export function Sidebar({
               onItemClick={onClose}
             />
             <div className="border-t border-border px-6 py-3">
-              <p className="truncate text-xs text-muted-foreground">
-                {orgSlug}
-              </p>
+              <p className="truncate text-xs text-muted-foreground">{orgSlug}</p>
             </div>
           </aside>
         </div>
@@ -148,4 +144,3 @@ export function Sidebar({
     </>
   );
 }
-

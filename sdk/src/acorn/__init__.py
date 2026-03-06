@@ -1,21 +1,18 @@
-﻿"""ASAHIO Python SDK."""
+﻿"""Legacy compatibility package for `from acorn import Acorn`."""
 
-from asahio._exceptions import (
+from asahio import (  # noqa: F401
     APIConnectionError,
     APIError,
+    Acorn,
+    AsyncAcorn,
     AsahioError,
     AuthenticationError,
     BudgetExceededError,
     RateLimitError,
+    __version__,
 )
-from asahio._version import __version__
-from asahio.client import Acorn, AsyncAcorn, AsyncAsahi, AsyncAsahio, Asahi, Asahio
 
 __all__ = [
-    "Asahio",
-    "AsyncAsahio",
-    "Asahi",
-    "AsyncAsahi",
     "Acorn",
     "AsyncAcorn",
     "AsahioError",

@@ -1,9 +1,10 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
-export default function OrgRoot({
+export default async function OrgRoot({
   params,
 }: {
-  params: { orgSlug: string };
+  params: Promise<{ orgSlug: string }>;
 }) {
-  redirect(`/${params.orgSlug}/dashboard`);
+  const { orgSlug } = await params;
+  redirect(`/${orgSlug}/dashboard`);
 }

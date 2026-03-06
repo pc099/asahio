@@ -1,4 +1,4 @@
-"""FastAPI application factory for ASAHI SaaS backend."""
+﻿"""FastAPI application factory for the ASAHIO backend."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
-from app.api import admin, analytics, auth, gateway, governance, keys, orgs
+from app.api import admin, agents, analytics, auth, billing, gateway, governance, keys, models, orgs, routing
 from app.config import get_settings
 from app.db import engine as _db_engine_mod
 from app.db.models import Base
@@ -61,7 +61,7 @@ async def _ensure_schema() -> None:
     """Run schema fix if needed, then create_all. Retry once after dropping user tables if create_all fails with FK type mismatch."""
     _engine = _db_engine_mod.engine  # Use module attribute (overridable by tests)
 
-    # PostgreSQL-specific schema migration — skip for SQLite (tests)
+    # PostgreSQL-specific schema migration â€” skip for SQLite (tests)
     if _engine.url.drivername.startswith("postgresql"):
         async with _engine.begin() as conn:
             await conn.run_sync(_check_and_fix_users_id_type)
@@ -107,9 +107,9 @@ async def lifespan(app: FastAPI):
             cache = RedisCache(app.state.redis)
             await cache.setup_semantic_index()
         except Exception:
-            logger.warning("Semantic cache index setup failed — semantic cache disabled")
+            logger.warning("Semantic cache index setup failed â€” semantic cache disabled")
     except Exception:
-        logger.warning("Redis not available — rate limiting and caching disabled")
+        logger.warning("Redis not available â€” rate limiting and caching disabled")
         app.state.redis = None
 
     yield
@@ -126,7 +126,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="ASAHIO API",
         version="1.0.0",
-        description="LLM Inference Optimization Platform — route, cache, save.",
+        description="ASAHIO agent infrastructure and observability API.",
         lifespan=lifespan,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
@@ -162,6 +162,10 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     app.include_router(gateway.router, prefix="/v1", tags=["gateway"])
     app.include_router(orgs.router, prefix="/orgs", tags=["organisations"])
+    app.include_router(agents.router, prefix="/agents", tags=["agents"])
+    app.include_router(models.router, prefix="/models", tags=["models"])
+    app.include_router(routing.router, prefix="/routing", tags=["routing"])
+    app.include_router(billing.router, prefix="/billing", tags=["billing"])
     app.include_router(keys.router, prefix="/keys", tags=["api-keys"])
     app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
     app.include_router(governance.router, prefix="/governance", tags=["governance"])
@@ -192,3 +196,5 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+

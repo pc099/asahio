@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -69,15 +69,15 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-7xl items-center gap-16 md:grid-cols-2">
           <div>
             <div className="mb-4 text-sm font-medium uppercase tracking-wide text-asahio">
-              Build intelligent inference
+              Enterprise agent control plane
             </div>
             <h1 className="mb-6 text-4xl font-bold leading-tight text-foreground md:text-5xl">
-              The inference optimizer for{" "}
-              <span className="text-asahio">cost efficiency</span>
+              The control plane for{" "}
+              <span className="text-asahio">production AI systems</span>
             </h1>
             <p className="mb-8 text-lg leading-relaxed text-muted-foreground">
-              ASAHIO intelligently routes requests, caches semantically similar
-              queries, and decomposes workflows to cut costs by 85-97%.
+              ASAHIO gives engineering teams routing, caching, billing,
+              compliance-aware controls, and observability for LLM agents in production.
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
@@ -113,7 +113,7 @@ export default function LandingPage() {
                   </div>
                   <p className="text-sm font-mono text-asahio">ASAHIO ENGINE</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Ready to optimize
+                    Control plane ready
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground/80">
                     Sign in or sign up to use the dashboard
@@ -143,10 +143,10 @@ export default function LandingPage() {
       >
         <div className="mx-auto max-w-7xl">
           <h2 className="mb-4 text-center text-3xl font-bold text-foreground md:text-4xl">
-            Why ASAHIO?
+            Why ASAHIO
           </h2>
           <p className="mb-12 text-center text-muted-foreground">
-            Three intelligent caching layers
+            Routing, caching, and observability
           </p>
           <div className="grid gap-8 md:grid-cols-3">
             {[
@@ -232,7 +232,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-black/10" />
         <div className="relative z-10 mx-auto max-w-4xl text-center text-white">
           <h2 className="mb-6 text-3xl font-bold md:text-4xl">
-            Ready to optimize your LLM inference?
+            Ready to run AI systems with control?
           </h2>
           <p className="mb-8 text-lg opacity-95">
             Join companies reducing inference costs by 87% without compromising
@@ -347,3 +347,7 @@ export default function LandingPage() {
     </div>
   );
 }
+
+
+
+

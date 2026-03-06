@@ -1,32 +1,33 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { type ComponentType, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { chatCompletions } from "@/lib/api";
+import { chatCompletions, getCompletionMetadata } from "@/lib/api";
 import type { ChatCompletionResponse } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
-  Play,
-  Loader2,
+  ChevronDown,
+  Clock,
   Cpu,
   Database,
   DollarSign,
-  Clock,
-  TrendingDown,
+  Loader2,
+  Play,
+  Shield,
   Sparkles,
-  ChevronDown,
+  TrendingDown,
 } from "lucide-react";
 
-const ROUTING_MODES = ["AUTOPILOT", "GUIDED", "EXPLICIT"] as const;
+const ROUTING_MODES = ["AUTO", "GUIDED", "EXPLICIT"] as const;
+const INTERVENTION_MODES = ["OBSERVE", "ASSISTED", "AUTONOMOUS"] as const;
 
 const MODE_DESCRIPTIONS: Record<string, string> = {
-  AUTOPILOT: "Auto-detects task type and selects the cheapest model that meets quality requirements",
-  GUIDED: "You set quality and latency preferences, ASAHIO picks the best model",
-  EXPLICIT: "You choose the exact model — ASAHIO shows what you could save with alternatives",
+  AUTO: "ASAHIO picks the best route for the task, cost target, and available cache state.",
+  GUIDED: "You constrain quality and latency. ASAHIO still decides the final provider and model.",
+  EXPLICIT: "You pin the model while still collecting observability, cost, and policy metadata.",
 };
 
-// Maps frontend quality labels to backend-expected values
 const QUALITY_OPTIONS = [
   { label: "Economy", value: "low" },
   { label: "Balanced", value: "medium" },
@@ -50,12 +51,19 @@ const AVAILABLE_MODELS = [
 export default function PlaygroundPage() {
   const params = useParams();
   const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : undefined;
-  const [routingMode, setRoutingMode] = useState<string>("AUTOPILOT");
+
+  const [routingMode, setRoutingMode] = useState<string>("AUTO");
+  const [interventionMode, setInterventionMode] = useState<string>("OBSERVE");
   const [qualityIndex, setQualityIndex] = useState(1);
   const [latencyIndex, setLatencyIndex] = useState(1);
   const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0].id);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<ChatCompletionResponse | null>(null);
+
+  const metadata = useMemo(
+    () => (result ? getCompletionMetadata(result) : null),
+    [result]
+  );
 
   const mutation = useMutation({
     mutationFn: (userMessage: string) =>
@@ -63,6 +71,7 @@ export default function PlaygroundPage() {
         {
           messages: [{ role: "user", content: userMessage }],
           routing_mode: routingMode,
+          intervention_mode: interventionMode,
           quality_preference: QUALITY_OPTIONS[qualityIndex].value,
           latency_preference: LATENCY_OPTIONS[latencyIndex].value,
           ...(routingMode === "EXPLICIT" ? { model: selectedModel } : {}),
@@ -83,25 +92,21 @@ export default function PlaygroundPage() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Playground</h1>
         <p className="text-sm text-muted-foreground">
-          Test inference requests and see ASAHIO optimization in action
+          Exercise the canonical ASAHIO gateway contract and inspect cost, routing, cache, and policy metadata.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Left panel - Input */}
         <div className="space-y-4">
-          {/* Routing mode */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label className="mb-3 block text-sm font-medium text-foreground">
-              Routing Mode
-            </label>
-            <div className="flex gap-2">
+            <label className="mb-3 block text-sm font-medium text-foreground">Routing Mode</label>
+            <div className="grid grid-cols-3 gap-2">
               {ROUTING_MODES.map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setRoutingMode(mode)}
                   className={cn(
-                    "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                     routingMode === mode
                       ? "bg-asahio text-white"
                       : "border border-border bg-background text-muted-foreground hover:text-foreground"
@@ -111,26 +116,39 @@ export default function PlaygroundPage() {
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {MODE_DESCRIPTIONS[routingMode]}
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">{MODE_DESCRIPTIONS[routingMode]}</p>
           </div>
 
-          {/* EXPLICIT mode — model selector */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <label className="mb-3 block text-sm font-medium text-foreground">Intervention Mode</label>
+            <div className="relative">
+              <select
+                value={interventionMode}
+                onChange={(e) => setInterventionMode(e.target.value)}
+                className="w-full appearance-none rounded-md border border-border bg-background px-4 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-asahio"
+              >
+                {INTERVENTION_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+          </div>
+
           {routingMode === "EXPLICIT" && (
             <div className="rounded-lg border border-border bg-card p-4">
-              <label className="mb-3 block text-sm font-medium text-foreground">
-                Model
-              </label>
+              <label className="mb-3 block text-sm font-medium text-foreground">Model</label>
               <div className="relative">
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="w-full appearance-none rounded-md border border-border bg-background px-4 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-asahio"
                 >
-                  {AVAILABLE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label} ({m.provider})
+                  {AVAILABLE_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label} ({model.provider})
                     </option>
                   ))}
                 </select>
@@ -139,13 +157,10 @@ export default function PlaygroundPage() {
             </div>
           )}
 
-          {/* GUIDED mode — quality + latency preferences */}
-          {routingMode === "GUIDED" && (
+          {routingMode !== "EXPLICIT" && (
             <>
               <div className="rounded-lg border border-border bg-card p-4">
-                <label className="mb-3 block text-sm font-medium text-foreground">
-                  Quality Preference
-                </label>
+                <label className="mb-3 block text-sm font-medium text-foreground">Quality Preference</label>
                 <input
                   type="range"
                   min={0}
@@ -156,21 +171,16 @@ export default function PlaygroundPage() {
                   className="w-full accent-asahio"
                 />
                 <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                  {QUALITY_OPTIONS.map((q, i) => (
-                    <span
-                      key={q.value}
-                      className={cn(qualityIndex === i && "text-asahio font-medium")}
-                    >
-                      {q.label}
+                  {QUALITY_OPTIONS.map((option, index) => (
+                    <span key={option.value} className={cn(qualityIndex === index && "font-medium text-asahio")}>
+                      {option.label}
                     </span>
                   ))}
                 </div>
               </div>
 
               <div className="rounded-lg border border-border bg-card p-4">
-                <label className="mb-3 block text-sm font-medium text-foreground">
-                  Latency Preference
-                </label>
+                <label className="mb-3 block text-sm font-medium text-foreground">Latency Preference</label>
                 <input
                   type="range"
                   min={0}
@@ -181,12 +191,9 @@ export default function PlaygroundPage() {
                   className="w-full accent-asahio"
                 />
                 <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                  {LATENCY_OPTIONS.map((l, i) => (
-                    <span
-                      key={l.value}
-                      className={cn(latencyIndex === i && "text-asahio font-medium")}
-                    >
-                      {l.label}
+                  {LATENCY_OPTIONS.map((option, index) => (
+                    <span key={option.value} className={cn(latencyIndex === index && "font-medium text-asahio")}>
+                      {option.label}
                     </span>
                   ))}
                 </div>
@@ -194,44 +201,13 @@ export default function PlaygroundPage() {
             </>
           )}
 
-          {/* AUTOPILOT mode — simplified quality slider */}
-          {routingMode === "AUTOPILOT" && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <label className="mb-3 block text-sm font-medium text-foreground">
-                Quality Preference
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={3}
-                step={1}
-                value={qualityIndex}
-                onChange={(e) => setQualityIndex(Number(e.target.value))}
-                className="w-full accent-asahio"
-              />
-              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                {QUALITY_OPTIONS.map((q, i) => (
-                  <span
-                    key={q.value}
-                    className={cn(qualityIndex === i && "text-asahio font-medium")}
-                  >
-                    {q.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Message input */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <label className="mb-3 block text-sm font-medium text-foreground">
-              Message
-            </label>
+            <label className="mb-3 block text-sm font-medium text-foreground">Message</label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Enter your prompt here..."
-              rows={6}
+              placeholder="Describe the task you want the agent control plane to handle..."
+              rows={7}
               className="w-full resize-none rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-asahio"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleRun();
@@ -239,11 +215,10 @@ export default function PlaygroundPage() {
             />
           </div>
 
-          {/* Run button */}
           <button
             onClick={handleRun}
             disabled={!message.trim() || mutation.isPending}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-asahio px-4 py-3 text-sm font-medium text-white hover:bg-asahio-dark disabled:opacity-50 transition-colors"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-asahio px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-asahio-dark disabled:opacity-50"
           >
             {mutation.isPending ? (
               <>
@@ -259,13 +234,9 @@ export default function PlaygroundPage() {
           </button>
         </div>
 
-        {/* Right panel - Response */}
         <div className="space-y-4">
-          {/* Response display */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium text-foreground">
-              Response
-            </h3>
+            <h3 className="mb-3 text-sm font-medium text-foreground">Response</h3>
             {mutation.isPending ? (
               <div className="animate-pulse space-y-3">
                 <div className="h-4 w-3/4 rounded bg-muted" />
@@ -276,93 +247,31 @@ export default function PlaygroundPage() {
             ) : mutation.isError ? (
               <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4">
                 <p className="text-sm font-medium text-red-400">Request failed</p>
-                <p className="mt-1 text-sm text-red-300/90 break-words">
-                  {mutation.error instanceof Error
-                    ? mutation.error.message
-                    : "An error occurred"}
+                <p className="mt-1 break-words text-sm text-red-300/90">
+                  {mutation.error instanceof Error ? mutation.error.message : "An error occurred"}
                 </p>
               </div>
             ) : result ? (
-              <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                 {result.choices[0]?.message.content || "No response content"}
               </div>
             ) : (
               <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-                Run a request to see the response here.
+                Run a request to inspect the control-plane response.
               </div>
             )}
           </div>
 
-          {/* Metadata cards */}
-          {result && (
+          {result && metadata && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Cpu className="h-3.5 w-3.5" />
-                  Model Used
-                </div>
-                <p className="mt-1 font-mono text-sm font-medium text-foreground">
-                  {result.asahi.model_used}
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Database className="h-3.5 w-3.5" />
-                  Cache Tier
-                </div>
-                <p className="mt-1 text-sm font-medium text-foreground">
-                  {result.asahi.cache_hit
-                    ? result.asahi.cache_tier || "hit"
-                    : "miss"}
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  Cost
-                </div>
-                <p className="mt-1 text-sm font-medium text-foreground">
-                  {formatCurrency(result.asahi.cost_with_asahi)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  vs {formatCurrency(result.asahi.cost_without_asahi)} without
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <TrendingDown className="h-3.5 w-3.5" />
-                  Savings
-                </div>
-                <p className="mt-1 text-sm font-medium text-green-400">
-                  {formatCurrency(result.asahi.savings_usd)} ({result.asahi.savings_pct.toFixed(0)}%)
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  Tokens
-                </div>
-                <p className="mt-1 text-sm font-medium text-foreground">
-                  {result.usage.total_tokens.toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {result.usage.prompt_tokens} in / {result.usage.completion_tokens} out
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Routing
-                </div>
-                <p className="mt-1 text-sm font-medium text-foreground truncate">
-                  {result.asahi.routing_reason}
-                </p>
-              </div>
+              <MetricCard icon={Cpu} label="Model Used" value={metadata.model_used} mono />
+              <MetricCard icon={Database} label="Cache Tier" value={metadata.cache_hit ? metadata.cache_tier || "hit" : "miss"} />
+              <MetricCard icon={DollarSign} label="Cost With ASAHIO" value={formatCurrency(metadata.cost_with_asahio)} subtitle={`vs ${formatCurrency(metadata.cost_without_asahio)} baseline`} />
+              <MetricCard icon={TrendingDown} label="Savings" value={`${formatCurrency(metadata.savings_usd)} (${metadata.savings_pct.toFixed(0)}%)`} highlight />
+              <MetricCard icon={Clock} label="Tokens" value={result.usage.total_tokens.toLocaleString()} subtitle={`${result.usage.prompt_tokens} in / ${result.usage.completion_tokens} out`} />
+              <MetricCard icon={Shield} label="Policy" value={metadata.policy_action || metadata.intervention_mode || "OBSERVE"} subtitle={metadata.policy_reason || metadata.routing_reason || "No policy note"} />
+              <MetricCard icon={Sparkles} label="Routing" value={metadata.routing_mode || routingMode} subtitle={metadata.routing_reason || MODE_DESCRIPTIONS[routingMode]} />
+              <MetricCard icon={Shield} label="Request ID" value={metadata.request_id || "pending"} mono />
             </div>
           )}
         </div>
@@ -370,3 +279,31 @@ export default function PlaygroundPage() {
     </div>
   );
 }
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  subtitle,
+  highlight,
+  mono,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  subtitle?: string;
+  highlight?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <p className={cn("mt-1 text-sm font-medium text-foreground", highlight && "text-green-400", mono && "font-mono text-xs")}>{value}</p>
+      {subtitle && <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>}
+    </div>
+  );
+}
+

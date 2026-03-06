@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { UserButton } from "@clerk/nextjs";
@@ -22,19 +22,18 @@ export function DashboardHeader({
   const confettiFired = useRef(false);
 
   const { data: overview } = useQuery({
-    queryKey: ["overview", orgSlug],
-    queryFn: () => getAnalyticsOverview("30d"),
+    queryKey: ["overview", orgSlug, "header"],
+    queryFn: () => getAnalyticsOverview("30d", undefined, orgSlug),
     refetchInterval: 30_000,
   });
 
-  // Fire confetti when request count transitions from 0 to >0
   useEffect(() => {
     if (!overview || confettiFired.current) return;
     const total = overview.total_requests;
     if (prevRequests.current !== null && prevRequests.current === 0 && total > 0) {
       confettiFired.current = true;
       fireConfetti();
-      toast.success("First request detected! Your savings are rolling in.");
+      toast.success("First request detected. ASAHIO is now tracking savings.");
     }
     prevRequests.current = total;
   }, [overview]);
@@ -52,14 +51,10 @@ export function DashboardHeader({
             <Menu className="h-4 w-4" />
           </button>
         )}
-        <h2 className="text-sm font-medium text-muted-foreground">
-          {orgSlug}
-        </h2>
-        {overview && overview.total_savings_usd > 0 && (
-          <span className="text-sm font-semibold text-asahio">
-            {formatCurrency(overview.total_savings_usd)} saved this month
-          </span>
-        )}
+        <h2 className="text-sm font-medium text-muted-foreground">{orgSlug}</h2>
+        <span className="text-sm font-semibold text-asahio">
+          {formatCurrency(overview?.total_savings_usd ?? 0)} saved in 30d
+        </span>
       </div>
       <div className="flex items-center gap-4">
         <kbd className="hidden items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:flex">
@@ -70,4 +65,3 @@ export function DashboardHeader({
     </header>
   );
 }
-

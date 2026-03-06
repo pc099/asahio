@@ -1,20 +1,21 @@
-"""Gateway route — OpenAI-compatible proxy wrapping the existing InferenceOptimizer.
-
-POST /v1/chat/completions — Drop-in replacement for OpenAI API.
-Includes Redis cache integration, budget checks, and org limit enforcement.
-Supports both JSON and SSE streaming responses.
-"""
+﻿"""OpenAI-compatible gateway route for the ASAHIO backend."""
 
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.optimizer import GatewayResult, run_inference
+from app.core.optimizer import GatewayResult, normalize_routing_mode, run_inference
+from app.db.engine import get_db
+from app.db.models import Agent, AgentSession, InterventionMode, ModelEndpoint
 from app.services.metering import is_budget_exceeded, is_rate_limited
 
 router = APIRouter()
@@ -29,25 +30,105 @@ class ChatCompletionRequest(BaseModel):
     model: str | None = None
     messages: list[ChatMessage]
     stream: bool = False
-    routing_mode: str = "AUTOPILOT"
+    routing_mode: str | None = None
+    intervention_mode: str | None = None
     quality_preference: str = "high"
     latency_preference: str = "normal"
+    agent_id: str | None = None
+    session_id: str | None = None
+    model_endpoint_id: str | None = None
+
+
+async def _resolve_agent(db: AsyncSession, org_id: str, agent_id: str | None) -> Agent | None:
+    if not agent_id:
+        return None
+    agent = await db.get(Agent, uuid.UUID(agent_id))
+    if not agent or str(agent.organisation_id) != org_id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
+
+
+async def _resolve_model_endpoint(
+    db: AsyncSession,
+    org_id: str,
+    model_endpoint_id: str | None,
+) -> ModelEndpoint | None:
+    if not model_endpoint_id:
+        return None
+    endpoint = await db.get(ModelEndpoint, uuid.UUID(model_endpoint_id))
+    if not endpoint or str(endpoint.organisation_id) != org_id:
+        raise HTTPException(status_code=404, detail="Model endpoint not found")
+    return endpoint
+
+
+async def _resolve_session(
+    db: AsyncSession,
+    org_id: str,
+    agent: Agent | None,
+    external_session_id: str | None,
+) -> AgentSession | None:
+    if not external_session_id:
+        return None
+    if not agent:
+        raise HTTPException(status_code=400, detail="session_id requires agent_id")
+
+    result = await db.execute(
+        select(AgentSession).where(
+            AgentSession.organisation_id == uuid.UUID(org_id),
+            AgentSession.agent_id == agent.id,
+            AgentSession.external_session_id == external_session_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        session = AgentSession(
+            organisation_id=uuid.UUID(org_id),
+            agent_id=agent.id,
+            external_session_id=external_session_id,
+        )
+        db.add(session)
+        await db.flush()
+    else:
+        session.last_seen_at = datetime.now(timezone.utc)
+        await db.flush()
+    return session
+
+
+def _build_metadata(result: GatewayResult, external_session_id: str | None) -> dict:
+    metadata = {
+        "cache_hit": result.cache_hit,
+        "cache_tier": result.cache_tier,
+        "model_requested": result.model_requested,
+        "model_used": result.model_used,
+        "provider": result.provider,
+        "routing_mode": result.routing_mode,
+        "intervention_mode": result.intervention_mode,
+        "agent_id": result.agent_id,
+        "agent_session_id": result.agent_session_id,
+        "session_id": external_session_id,
+        "model_endpoint_id": result.model_endpoint_id,
+        "cost_without_asahio": result.cost_without_asahi,
+        "cost_with_asahio": result.cost_with_asahi,
+        "cost_without_asahi": result.cost_without_asahi,
+        "cost_with_asahi": result.cost_with_asahi,
+        "savings_usd": result.savings_usd,
+        "savings_pct": result.savings_pct,
+        "routing_reason": result.routing_reason,
+        "routing_factors": result.routing_factors,
+        "routing_confidence": result.routing_confidence,
+        "policy_action": result.policy_action,
+        "policy_reason": result.policy_reason,
+        "request_id": result.request_id,
+    }
+    return metadata
 
 
 @router.post("/chat/completions")
-async def chat_completions(body: ChatCompletionRequest, request: Request):
-    """OpenAI-compatible chat completions endpoint with ASAHI optimization.
-
-    Flow:
-    1. Validate auth (org_id from middleware)
-    2. Check org monthly request limit (Redis)
-    3. Check org monthly budget (Redis)
-    4. Redis cache check (exact → semantic)
-    5. On cache miss: call InferenceOptimizer.infer() from src/
-    6. Store in Redis cache (fire-and-forget)
-    7. Return OpenAI-compatible response + asahi{} metadata
-    8. Metering middleware logs usage AFTER response
-    """
+async def chat_completions(
+    body: ChatCompletionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     org_id = getattr(request.state, "org_id", None)
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context required")
@@ -55,7 +136,6 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
     org = getattr(request.state, "org", None)
     redis = getattr(request.app.state, "redis", None)
 
-    # Check monthly request limit
     if redis and org:
         if await is_rate_limited(redis, org_id, org.monthly_request_limit):
             return JSONResponse(
@@ -69,7 +149,6 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
                 status_code=429,
             )
 
-        # Check monthly budget
         budget = float(org.monthly_budget_usd) if org.monthly_budget_usd else 0
         if budget > 0 and await is_budget_exceeded(redis, org_id, budget):
             return JSONResponse(
@@ -83,24 +162,43 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
                 status_code=402,
             )
 
-    # Extract last user message as the prompt
-    user_messages = [m for m in body.messages if m.role == "user"]
+    user_messages = [message for message in body.messages if message.role == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user message found in messages")
 
     prompt = user_messages[-1].content
+    agent = await _resolve_agent(db, org_id, body.agent_id)
+    effective_model_endpoint_id = body.model_endpoint_id or (
+        str(agent.model_endpoint_id) if agent and agent.model_endpoint_id else None
+    )
+    model_endpoint = await _resolve_model_endpoint(db, org_id, effective_model_endpoint_id)
+    session = await _resolve_session(db, org_id, agent, body.session_id)
 
-    # Run inference (includes Redis cache check + optimizer fallback)
+    effective_routing_mode = normalize_routing_mode(
+        body.routing_mode or (agent.routing_mode.value if agent else None)
+    )
+    effective_intervention_mode = (
+        body.intervention_mode
+        or (agent.intervention_mode.value if agent else InterventionMode.OBSERVE.value)
+    ).upper()
+    model_override = body.model or (model_endpoint.model_id if model_endpoint else None)
+
     result: GatewayResult = await run_inference(
         prompt=prompt,
-        routing_mode=body.routing_mode,
+        routing_mode=effective_routing_mode,
+        intervention_mode=effective_intervention_mode,
         quality_preference=body.quality_preference,
         latency_preference=body.latency_preference,
-        model_override=body.model,
+        model_override=model_override,
         org_id=org_id,
+        agent_id=str(agent.id) if agent else None,
+        agent_session_id=str(session.id) if session else None,
+        model_endpoint_id=str(model_endpoint.id) if model_endpoint else None,
+        provider_hint=model_endpoint.provider if model_endpoint else None,
         use_mock=get_settings().debug,
         redis=redis,
     )
+    result.model_requested = body.model or (model_endpoint.model_id if model_endpoint else body.model)
 
     if result.error_message:
         return JSONResponse(
@@ -114,15 +212,15 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
             status_code=500,
         )
 
-    # Store result in request.state for metering middleware
-    request.state.inference_result = result
-
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    if not result.request_id:
+        result.request_id = completion_id
+    request.state.inference_result = result
+    metadata = _build_metadata(result, body.session_id)
 
-    # ── SSE streaming mode ───────────────────────
     if body.stream:
         return StreamingResponse(
-            _stream_response(completion_id, result, body.model),
+            _stream_response(completion_id, result, metadata),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -131,7 +229,6 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
             },
         )
 
-    # ── Normal JSON response ─────────────────────
     return {
         "id": completion_id,
         "object": "chat.completion",
@@ -148,33 +245,13 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
             "completion_tokens": result.output_tokens,
             "total_tokens": result.input_tokens + result.output_tokens,
         },
-        "asahi": {
-            "cache_hit": result.cache_hit,
-            "cache_tier": result.cache_tier,
-            "model_requested": body.model,
-            "model_used": result.model_used,
-            "cost_without_asahi": result.cost_without_asahi,
-            "cost_with_asahi": result.cost_with_asahi,
-            "savings_usd": result.savings_usd,
-            "savings_pct": result.savings_pct,
-            "routing_reason": result.routing_reason,
-        },
+        "asahio": metadata,
+        "asahi": metadata,
     }
 
 
-async def _stream_response(
-    completion_id: str,
-    result: GatewayResult,
-    model_requested: str | None,
-):
-    """Yield OpenAI-compatible SSE chunks from a completed inference result.
-
-    Splits the full response into words and streams them one by one with a
-    small delay to simulate token-level streaming.  The final chunk includes
-    ``finish_reason: "stop"`` followed by the ``[DONE]`` sentinel.
-    """
-
-    def _chunk(content: str | None, finish_reason: str | None) -> str:
+async def _stream_response(completion_id: str, result: GatewayResult, metadata: dict):
+    def _chunk(content: Optional[str], finish_reason: Optional[str]) -> str:
         payload = {
             "id": completion_id,
             "object": "chat.completion.chunk",
@@ -189,34 +266,25 @@ async def _stream_response(
         }
         return f"data: {json.dumps(payload)}\n\n"
 
-    # Stream words with a small delay between each
     words = result.response.split(" ")
-    for i, word in enumerate(words):
-        token = word if i == 0 else f" {word}"
+    for index, word in enumerate(words):
+        token = word if index == 0 else f" {word}"
         yield _chunk(token, None)
         await asyncio.sleep(0.02)
 
-    # Final chunk — stop signal
     yield _chunk(None, "stop")
-
-    # Include asahi metadata as a custom SSE event for SDK consumers
-    asahi_payload = {
-        "cache_hit": result.cache_hit,
-        "cache_tier": result.cache_tier,
-        "model_requested": model_requested,
-        "model_used": result.model_used,
-        "cost_without_asahi": result.cost_without_asahi,
-        "cost_with_asahi": result.cost_with_asahi,
-        "savings_usd": result.savings_usd,
-        "savings_pct": result.savings_pct,
-        "routing_reason": result.routing_reason,
+    event_payload = {
+        **metadata,
         "usage": {
             "prompt_tokens": result.input_tokens,
             "completion_tokens": result.output_tokens,
             "total_tokens": result.input_tokens + result.output_tokens,
         },
     }
-    yield f"event: asahi\ndata: {json.dumps(asahi_payload)}\n\n"
-
-    # OpenAI [DONE] sentinel
+    yield f"event: asahio\ndata: {json.dumps(event_payload)}\n\n"
+    yield f"event: asahi\ndata: {json.dumps(event_payload)}\n\n"
     yield "data: [DONE]\n\n"
+
+
+
+
