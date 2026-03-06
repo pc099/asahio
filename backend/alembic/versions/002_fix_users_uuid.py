@@ -1,4 +1,4 @@
-"""Fix users.id to UUID when it was created as integer.
+﻿"""Fix users.id to UUID when it was created as integer.
 
 Drops tables that reference users, then recreates users (and dependents) with UUID.
 Run this if you see: foreign key constraint members_user_id_fkey cannot be implemented
@@ -22,16 +22,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 # Reuse enum types from 001 (they must already exist)
 plan_tier = postgresql.ENUM(
-    "free", "pro", "enterprise", name="plantier", create_type=False
+    "FREE", "PRO", "ENTERPRISE", name="plantier", create_type=False
 )
 member_role = postgresql.ENUM(
-    "owner", "admin", "member", "viewer", name="memberrole", create_type=False
+    "OWNER", "ADMIN", "MEMBER", "VIEWER", name="memberrole", create_type=False
 )
 key_environment = postgresql.ENUM(
-    "live", "test", name="keyenvironment", create_type=False
+    "LIVE", "TEST", name="keyenvironment", create_type=False
 )
 cache_type = postgresql.ENUM(
-    "exact", "semantic", "intermediate", "miss", name="cachetype", create_type=False
+    "EXACT", "SEMANTIC", "INTERMEDIATE", "MISS", name="cachetype", create_type=False
 )
 
 
@@ -68,7 +68,7 @@ def _recreate_members(bind) -> None:
             nullable=False,
         ),
         sa.Column(
-            "role", member_role, nullable=False, server_default="member"
+            "role", member_role, nullable=False, server_default="MEMBER"
         ),
         sa.Column(
             "created_at",
@@ -99,7 +99,7 @@ def _recreate_api_keys(bind) -> None:
         ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column(
-            "environment", key_environment, server_default="live"
+            "environment", key_environment, server_default="LIVE"
         ),
         sa.Column("prefix", sa.String(32), nullable=False),
         sa.Column(
@@ -222,7 +222,7 @@ def _recreate_invitations(bind) -> None:
             sa.ForeignKey("users.id"),
         ),
         sa.Column("email", sa.String(255), nullable=False),
-        sa.Column("role", member_role, server_default="member"),
+        sa.Column("role", member_role, server_default="MEMBER"),
         sa.Column("token", sa.String(128), nullable=False, unique=True),
         sa.Column(
             "accepted_at", sa.DateTime(timezone=True), nullable=True
@@ -274,3 +274,4 @@ def downgrade() -> None:
     # This migration is a one-way fix; downgrade is a no-op
     # (reverting would require restoring integer users.id, which we don't want)
     pass
+

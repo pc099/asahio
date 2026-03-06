@@ -1,4 +1,4 @@
-"""Initial schema — organisations, users, members, API keys, request logs,
+﻿"""Initial schema â€” organisations, users, members, API keys, request logs,
 usage snapshots, audit logs, invitations.
 
 Revision ID: 001
@@ -17,10 +17,10 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 # Enum types
-plan_tier = postgresql.ENUM("free", "pro", "enterprise", name="plantier", create_type=False)
-member_role = postgresql.ENUM("owner", "admin", "member", "viewer", name="memberrole", create_type=False)
-key_environment = postgresql.ENUM("live", "test", name="keyenvironment", create_type=False)
-cache_type = postgresql.ENUM("exact", "semantic", "intermediate", "miss", name="cachetype", create_type=False)
+plan_tier = postgresql.ENUM("FREE", "PRO", "ENTERPRISE", name="plantier", create_type=False)
+member_role = postgresql.ENUM("OWNER", "ADMIN", "MEMBER", "VIEWER", name="memberrole", create_type=False)
+key_environment = postgresql.ENUM("LIVE", "TEST", name="keyenvironment", create_type=False)
+cache_type = postgresql.ENUM("EXACT", "SEMANTIC", "INTERMEDIATE", "MISS", name="cachetype", create_type=False)
 
 
 def upgrade() -> None:
@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(255), nullable=False, unique=True),
-        sa.Column("plan", plan_tier, nullable=False, server_default="free"),
+        sa.Column("plan", plan_tier, nullable=False, server_default="FREE"),
         sa.Column("stripe_customer_id", sa.String(255), unique=True, nullable=True),
         sa.Column("stripe_subscription_id", sa.String(255), unique=True, nullable=True),
         sa.Column("monthly_request_limit", sa.Integer, server_default="10000"),
@@ -74,7 +74,7 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("role", member_role, nullable=False, server_default="member"),
+        sa.Column("role", member_role, nullable=False, server_default="MEMBER"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.UniqueConstraint("organisation_id", "user_id", name="uq_member_org_user"),
     )
@@ -96,7 +96,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("environment", key_environment, server_default="live"),
+        sa.Column("environment", key_environment, server_default="LIVE"),
         sa.Column("prefix", sa.String(32), nullable=False),
         sa.Column("key_hash", sa.String(128), nullable=False, unique=True),
         sa.Column("last_four", sa.String(4), nullable=False),
@@ -211,7 +211,7 @@ def upgrade() -> None:
             sa.ForeignKey("users.id"),
         ),
         sa.Column("email", sa.String(255), nullable=False),
-        sa.Column("role", member_role, server_default="member"),
+        sa.Column("role", member_role, server_default="MEMBER"),
         sa.Column("token", sa.String(128), nullable=False, unique=True),
         sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -234,3 +234,4 @@ def downgrade() -> None:
     key_environment.drop(op.get_bind(), checkfirst=True)
     member_role.drop(op.get_bind(), checkfirst=True)
     plan_tier.drop(op.get_bind(), checkfirst=True)
+

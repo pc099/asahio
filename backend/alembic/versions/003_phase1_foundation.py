@@ -16,7 +16,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 compliance_tier = postgresql.ENUM(
-    "standard", "enterprise", "hipaa", name="compliancetier", create_type=False
+    "STANDARD", "ENTERPRISE", "HIPAA", name="compliancetier", create_type=False
 )
 routing_mode = postgresql.ENUM(
     "AUTO", "EXPLICIT", "GUIDED", name="routingmode", create_type=False
@@ -25,12 +25,12 @@ intervention_mode = postgresql.ENUM(
     "OBSERVE", "ASSISTED", "AUTONOMOUS", name="interventionmode", create_type=False
 )
 billing_status = postgresql.ENUM(
-    "trialing", "active", "past_due", "canceled", name="billingstatus", create_type=False
+    "TRIALING", "ACTIVE", "PAST_DUE", "CANCELED", name="billingstatus", create_type=False
 )
 model_endpoint_type = postgresql.ENUM(
-    "platform", "fine_tuned", "external", name="modelendpointtype", create_type=False
+    "PLATFORM", "FINE_TUNED", "EXTERNAL", name="modelendpointtype", create_type=False
 )
-plan_tier = postgresql.ENUM("free", "pro", "enterprise", name="plantier", create_type=False)
+plan_tier = postgresql.ENUM("FREE", "PRO", "ENTERPRISE", name="plantier", create_type=False)
 
 
 def upgrade() -> None:
@@ -44,7 +44,7 @@ def upgrade() -> None:
 
     op.add_column(
         "organisations",
-        sa.Column("compliance_tier", compliance_tier, nullable=False, server_default="standard"),
+        sa.Column("compliance_tier", compliance_tier, nullable=False, server_default="STANDARD"),
     )
 
     op.create_table(
@@ -56,8 +56,8 @@ def upgrade() -> None:
             sa.ForeignKey("organisations.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("plan", plan_tier, nullable=False, server_default="free"),
-        sa.Column("status", billing_status, nullable=False, server_default="trialing"),
+        sa.Column("plan", plan_tier, nullable=False, server_default="FREE"),
+        sa.Column("status", billing_status, nullable=False, server_default="TRIALING"),
         sa.Column("billing_email", sa.String(255), nullable=True),
         sa.Column("stripe_price_id", sa.String(255), nullable=True),
         sa.Column("stripe_meter_name", sa.String(255), nullable=False, server_default="asahio_tokens"),
@@ -79,7 +79,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("endpoint_type", model_endpoint_type, nullable=False, server_default="platform"),
+        sa.Column("endpoint_type", model_endpoint_type, nullable=False, server_default="PLATFORM"),
         sa.Column("provider", sa.String(100), nullable=False, server_default="asahio"),
         sa.Column("model_id", sa.String(255), nullable=False),
         sa.Column("endpoint_url", sa.Text(), nullable=True),
@@ -268,5 +268,6 @@ def downgrade() -> None:
     intervention_mode.drop(bind, checkfirst=True)
     routing_mode.drop(bind, checkfirst=True)
     compliance_tier.drop(bind, checkfirst=True)
+
 
 
