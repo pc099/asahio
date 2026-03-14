@@ -48,12 +48,12 @@ export default function LandingPage() {
             >
               Pricing
             </a>
-            <Link
+            <a
               href="/docs"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Docs
-            </Link>
+            </a>
           </div>
           <div className="flex items-center gap-3">
             <Link
@@ -282,14 +282,14 @@ export default function LandingPage() {
             <h4 className="mb-4 font-semibold text-foreground">Resources</h4>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/docs" className="hover:text-foreground transition-colors">
+                <a href="/docs" className="hover:text-foreground transition-colors">
                   Docs
-                </Link>
+                </a>
               </li>
               <li>
-                <Link href="/docs" className="hover:text-foreground transition-colors">
+                <a href="/docs" className="hover:text-foreground transition-colors">
                   API Reference
-                </Link>
+                </a>
               </li>
               <li>
                 <a href="#" className="hover:text-foreground transition-colors">

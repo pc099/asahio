@@ -19,7 +19,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+interface NavItem {
+  icon: typeof LayoutDashboard;
+  label: string;
+  path: string;
+  absolute?: boolean;
+}
+
+const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Zap, label: "Gateway", path: "/gateway" },
   { icon: Bot, label: "Agents", path: "/agents" },
@@ -60,20 +67,28 @@ function SidebarNav({ orgSlug, currentPath, onItemClick }: NavProps) {
     <>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const href = (item as { absolute?: boolean }).absolute ? item.path : `/${orgSlug}${item.path}`;
-          const active = isActive(item.path, (item as { absolute?: boolean }).absolute);
+          const href = item.absolute ? item.path : `/${orgSlug}${item.path}`;
+          const active = isActive(item.path, item.absolute);
+          const classes = cn(
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
+            active
+              ? "border-l-2 border-asahio bg-asahio/10 text-asahio"
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          );
+
+          // Use <a> for absolute links to force full page navigation
+          // (Link does client-side routing which gets caught by [orgSlug])
+          if (item.absolute) {
+            return (
+              <a key={item.path} href={href} onClick={onItemClick} className={classes}>
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </a>
+            );
+          }
+
           return (
-            <Link
-              key={item.path}
-              href={href}
-              onClick={onItemClick}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
-                active
-                  ? "border-l-2 border-asahio bg-asahio/10 text-asahio"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-            >
+            <Link key={item.path} href={href} onClick={onItemClick} className={classes}>
               <item.icon className="h-4 w-4" />
               {item.label}
             </Link>
