@@ -49,6 +49,12 @@ export default function LandingPage() {
             >
               Pricing
             </a>
+            <Link
+              href="/docs"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Docs
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             <Link
@@ -277,17 +283,14 @@ export default function LandingPage() {
             <h4 className="mb-4 font-semibold text-foreground">Resources</h4>
             <ul className="space-y-2 text-sm">
               <li>
-                <a href={apiDocsHref} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">
+                <Link href="/docs" className="hover:text-foreground transition-colors">
                   Docs
-                </a>
+                </Link>
               </li>
               <li>
-                <a
-                  href={openApiHref}
-                  className="hover:text-foreground transition-colors"
-                >
+                <Link href="/docs" className="hover:text-foreground transition-colors">
                   API Reference
-                </a>
+                </Link>
               </li>
               <li>
                 <a href="#" className="hover:text-foreground transition-colors">

@@ -396,7 +396,7 @@ class TestPineconeSemanticCache:
     async def test_semantic_set_upserts(
         self, pinecone_cache: RedisCache, mock_pinecone_index: MagicMock,
     ) -> None:
-        """semantic_set should upsert vector + metadata to Pinecone."""
+        """semantic_set should upsert vector + metadata to Pinecone with org namespace."""
         await pinecone_cache.semantic_set("org-1", "hello", "world", "gpt-4o")
         mock_pinecone_index.upsert.assert_called_once()
         call_args = mock_pinecone_index.upsert.call_args
@@ -406,6 +406,7 @@ class TestPineconeSemanticCache:
         assert vec_id.startswith("org-1:")
         assert metadata["org_id"] == "org-1"
         assert metadata["response"] == "world"
+        assert call_args[1]["namespace"] == "org-1"
 
     @pytest.mark.asyncio
     async def test_no_pinecone_skips_semantic(self, mock_redis: AsyncMock) -> None:

@@ -17,6 +17,7 @@ from app.core.optimizer import GatewayResult, normalize_routing_mode, run_infere
 from app.db.engine import get_db
 from app.db.models import Agent, AgentSession, InterventionMode, ModelEndpoint
 from app.services.metering import is_budget_exceeded, is_rate_limited
+from app.services.aba_writer import ABAObservationPayload, write_aba_observation
 from app.services.trace_writer import TracePayload, write_trace
 
 router = APIRouter()
@@ -236,6 +237,21 @@ async def chat_completions(
         error_message=result.error_message,
     )
     asyncio.create_task(write_trace(trace_payload))
+
+    # Fire ABA observation — never blocks the response
+    if agent:
+        aba_payload = ABAObservationPayload(
+            org_id=org_id,
+            agent_id=str(agent.id),
+            prompt=prompt,
+            response=result.response or "",
+            model_used=result.model_used or "unknown",
+            latency_ms=result.latency_ms,
+            cache_hit=result.cache_hit or False,
+            input_tokens=result.input_tokens or 0,
+            output_tokens=result.output_tokens or 0,
+        )
+        asyncio.create_task(write_aba_observation(aba_payload))
 
     if result.error_message:
         return JSONResponse(

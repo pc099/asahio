@@ -178,6 +178,7 @@ class RedisCache:
             results = index.query(
                 vector=query_vec,
                 top_k=1,
+                namespace=org_id,
                 filter=filter_dict,
                 include_metadata=True,
             )
@@ -231,6 +232,7 @@ class RedisCache:
                         "cached_at": datetime.now(timezone.utc).isoformat(),
                     },
                 )],
+                namespace=org_id,
             )
         except Exception:
             logger.exception("Semantic cache set failed for org %s", org_id)

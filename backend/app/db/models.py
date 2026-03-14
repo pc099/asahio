@@ -89,6 +89,26 @@ class ModelEndpointType(str, enum.Enum):
     EXTERNAL = "external"
 
 
+class AgentTypeClassification(str, enum.Enum):
+    """Behavioral classification of an agent's primary interaction pattern."""
+
+    CHATBOT = "CHATBOT"
+    RAG = "RAG"
+    CODING = "CODING"
+    WORKFLOW = "WORKFLOW"
+    AUTONOMOUS = "AUTONOMOUS"
+
+
+class OutputTypeClassification(str, enum.Enum):
+    """Classification of a single LLM response's structural type."""
+
+    FACTUAL = "FACTUAL"
+    CREATIVE = "CREATIVE"
+    CODE = "CODE"
+    STRUCTURED = "STRUCTURED"
+    CONVERSATIONAL = "CONVERSATIONAL"
+
+
 class Organisation(Base):
     """Top-level tenant. Every resource is scoped to an organisation."""
 
@@ -696,3 +716,88 @@ class Invitation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class AgentFingerprint(Base):
+    """Behavioral fingerprint for an agent, updated incrementally via EMA."""
+
+    __tablename__ = "agent_fingerprints"
+    __table_args__ = (
+        Index("ix_agent_fingerprints_org_id", "organisation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    total_observations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    avg_complexity: Mapped[float] = mapped_column(Numeric(5, 4), default=0.0, nullable=False)
+    avg_context_length: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0, nullable=False)
+    hallucination_rate: Mapped[float] = mapped_column(Numeric(5, 4), default=0.0, nullable=False)
+    model_distribution: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    cache_hit_rate: Mapped[float] = mapped_column(Numeric(5, 4), default=0.0, nullable=False)
+    baseline_confidence: Mapped[float] = mapped_column(Numeric(5, 4), default=0.0, nullable=False)
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    agent: Mapped["Agent"] = relationship("Agent", backref="fingerprint", uselist=False)
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+
+
+class StructuralRecord(Base):
+    """Per-call structural analysis record for ABA behavioral analytics."""
+
+    __tablename__ = "structural_records"
+    __table_args__ = (
+        Index("ix_structural_records_org_agent", "organisation_id", "agent_id"),
+        Index("ix_structural_records_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    call_trace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("call_traces.id"), nullable=True
+    )
+    query_complexity_score: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
+    agent_type_classification: Mapped[AgentTypeClassification] = mapped_column(
+        SAEnum(AgentTypeClassification), nullable=False
+    )
+    output_type_classification: Mapped[OutputTypeClassification] = mapped_column(
+        SAEnum(OutputTypeClassification), nullable=False
+    )
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    cache_hit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    hallucination_detected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    agent: Mapped["Agent"] = relationship("Agent")
+    organisation: Mapped["Organisation"] = relationship("Organisation")

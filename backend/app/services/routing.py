@@ -95,14 +95,18 @@ class RoutingContext:
 
 
 class ABAFeedbackHook:
-    """Stub for the Adaptive Budget Allocation (ABA) feedback loop.
+    """Agent Behavioral Analytics feedback loop for routing adjustments.
 
-    Phase 3 will implement the full ABA engine. This stub provides the
-    interface so the routing engine can accept it now without breaking.
+    Records per-agent model performance observations and computes routing
+    adjustments (quality_boost, avg_latency, confidence_boost) from history.
+    The routing engine applies these adjustments to model scores in _route_auto.
     """
 
-    def __init__(self, enabled: bool = False) -> None:
+    def __init__(self, enabled: bool = True, max_history: int = 100) -> None:
         self._enabled = enabled
+        self._max_history = max_history
+        # Per-agent history: {agent_id: [obs, ...]}
+        self._history: dict[str, list[dict]] = {}
 
     @property
     def enabled(self) -> bool:
@@ -116,20 +120,88 @@ class ABAFeedbackHook:
         quality_signal: Optional[float] = None,
         cost_usd: Optional[float] = None,
     ) -> None:
-        """Record a routing observation for ABA learning. No-op when disabled."""
+        """Record a routing observation for ABA learning."""
         if not self._enabled:
             return
+
+        obs = {
+            "model_used": model_used,
+            "latency_ms": latency_ms,
+            "quality_signal": quality_signal,
+            "cost_usd": cost_usd,
+        }
+
+        history = self._history.setdefault(agent_id, [])
+        history.append(obs)
+
+        # Keep only the last N observations
+        if len(history) > self._max_history:
+            self._history[agent_id] = history[-self._max_history:]
+
         logger.debug(
             "ABA observation: agent=%s model=%s latency=%.1fms quality=%s cost=%s",
             agent_id, model_used, latency_ms, quality_signal, cost_usd,
         )
 
     def get_routing_adjustment(self, agent_id: str) -> Optional[dict]:
-        """Return an ABA-derived routing adjustment for the given agent.
+        """Return ABA-derived routing adjustments for the given agent.
 
-        Returns None until Phase 3 implements the full engine.
+        Returns a dict with per-model adjustments:
+            {
+                "model_id": {
+                    "quality_boost": float,     # -0.2 to 0.2
+                    "avg_latency": float,       # ms
+                    "confidence_boost": float,   # 0.0 to 0.1
+                }
+            }
+        Returns None if insufficient history.
         """
-        return None
+        history = self._history.get(agent_id)
+        if not history or len(history) < 5:
+            return None
+
+        # Aggregate per-model stats
+        model_stats: dict[str, dict] = {}
+        for obs in history:
+            model = obs["model_used"]
+            stats = model_stats.setdefault(model, {
+                "total": 0,
+                "quality_sum": 0.0,
+                "quality_count": 0,
+                "latency_sum": 0.0,
+                "cost_sum": 0.0,
+            })
+            stats["total"] += 1
+            stats["latency_sum"] += obs["latency_ms"]
+            if obs["quality_signal"] is not None:
+                stats["quality_sum"] += obs["quality_signal"]
+                stats["quality_count"] += 1
+            if obs["cost_usd"] is not None:
+                stats["cost_sum"] += obs["cost_usd"]
+
+        adjustments: dict[str, dict] = {}
+        for model, stats in model_stats.items():
+            avg_quality = (
+                stats["quality_sum"] / stats["quality_count"]
+                if stats["quality_count"] > 0
+                else 0.5
+            )
+            avg_latency = stats["latency_sum"] / stats["total"]
+
+            # Quality boost: scale [0,1] quality signal to [-0.2, 0.2]
+            quality_boost = (avg_quality - 0.5) * 0.4
+            quality_boost = max(-0.2, min(0.2, quality_boost))
+
+            # Confidence boost: more observations = higher confidence
+            confidence_boost = min(0.1, stats["total"] / len(history) * 0.1)
+
+            adjustments[model] = {
+                "quality_boost": round(quality_boost, 4),
+                "avg_latency": round(avg_latency, 1),
+                "confidence_boost": round(confidence_boost, 4),
+            }
+
+        return adjustments
 
 
 class RoutingEngine:

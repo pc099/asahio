@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
-from app.api import admin, agents, analytics, auth, billing, gateway, governance, keys, models, orgs, routing, traces
+from app.api import aba, admin, agents, analytics, auth, billing, gateway, governance, keys, models, orgs, routing, traces
 from app.config import get_settings
 from app.db import engine as _db_engine_mod
 from app.db.models import Base
@@ -104,14 +104,18 @@ async def lifespan(app: FastAPI):
         await app.state.redis.ping()
         logger.info("Redis connected at %s", settings.redis_url)
 
-        # Set up semantic cache vector index
+        # Verify Pinecone semantic cache connectivity
         try:
             from app.services.cache import RedisCache
 
             cache = RedisCache(app.state.redis)
-            await cache.setup_semantic_index()
+            pc_index = cache._get_pinecone_index()
+            if pc_index is not None:
+                logger.info("Pinecone semantic cache connected")
+            else:
+                logger.info("Pinecone not configured — semantic cache uses Redis-only mode")
         except Exception:
-            logger.warning("Semantic cache index setup failed - semantic cache disabled")
+            logger.warning("Pinecone connectivity check failed — semantic cache disabled")
     except Exception:
         logger.warning("Redis not available - rate limiting and caching disabled")
         app.state.redis = None
@@ -161,6 +165,7 @@ def create_app() -> FastAPI:
             {"name": "organisations", "description": "Organisation CRUD and membership"},
             {"name": "auth", "description": "Authentication and session management"},
             {"name": "admin", "description": "Platform administration"},
+            {"name": "aba", "description": "Agent Behavioral Analytics — fingerprinting, anomalies, risk priors"},
         ],
     )
 
@@ -212,6 +217,7 @@ def create_app() -> FastAPI:
     app.include_router(governance.router, prefix="/governance", tags=["governance"])
     app.include_router(traces.router, tags=["traces"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
+    app.include_router(aba.router, tags=["aba"])
 
     @app.get("/health")
     async def health():

@@ -710,5 +710,121 @@ export async function getRoutingDecisions(
   );
 }
 
+// — ABA (Agent Behavioral Analytics) —————————————————
+
+export interface ABAFingerprint {
+  id: string;
+  agent_id: string;
+  organisation_id: string;
+  total_observations: number;
+  avg_complexity: number;
+  avg_context_length: number;
+  hallucination_rate: number;
+  model_distribution: Record<string, number>;
+  cache_hit_rate: number;
+  baseline_confidence: number;
+  last_updated_at: string;
+  created_at: string;
+}
+
+export interface ABAStructuralRecord {
+  id: string;
+  agent_id: string;
+  call_trace_id: string | null;
+  query_complexity_score: number;
+  agent_type_classification: string;
+  output_type_classification: string;
+  token_count: number;
+  latency_ms: number | null;
+  model_used: string;
+  cache_hit: boolean;
+  hallucination_detected: boolean;
+  created_at: string;
+}
+
+export interface ABAAnomaly {
+  agent_id: string;
+  anomaly_type: string;
+  severity: string;
+  current_value: number;
+  baseline_value: number;
+  deviation_pct: number;
+  detected_at: string;
+}
+
+export interface ABAColdStartStatus {
+  agent_id: string;
+  total_observations: number;
+  cold_start_threshold: number;
+  is_cold_start: boolean;
+  bootstrap_source: string | null;
+  progress_pct: number;
+}
+
+export interface ABARiskPrior {
+  risk_score: number;
+  observation_count: number;
+  confidence: number;
+  recommended_model: string | null;
+}
+
+export async function getABAFingerprints(
+  params: { min_observations?: number; limit?: number; offset?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.min_observations) searchParams.set("min_observations", String(params.min_observations));
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+  return fetchApi<{ data: ABAFingerprint[]; pagination: { total: number; limit: number; offset: number } }>(
+    `/aba/fingerprints?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getABAFingerprint(agentId: string, token?: string, orgSlug?: string) {
+  return fetchApi<ABAFingerprint>(`/aba/fingerprints/${agentId}`, {}, token, orgHeaders(orgSlug));
+}
+
+export async function getABAStructuralRecords(
+  params: { agent_id?: string; limit?: number; offset?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+  return fetchApi<{ data: ABAStructuralRecord[]; pagination: { total: number; limit: number; offset: number } }>(
+    `/aba/structural-records?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getABAAnomalies(
+  params: { agent_id?: string; severity?: string } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.severity) searchParams.set("severity", params.severity);
+  return fetchApi<{ data: ABAAnomaly[] }>(
+    `/aba/anomalies?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getABAColdStartStatus(agentId: string, token?: string, orgSlug?: string) {
+  return fetchApi<ABAColdStartStatus>(`/aba/cold-start-status/${agentId}`, {}, token, orgHeaders(orgSlug));
+}
+
 
 
