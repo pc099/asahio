@@ -13,8 +13,8 @@ com1
 com2
 lpt1
 lpt2
-asahi/
-docs/
+/asahi/
+/docs/
 __pycache__/
 *.pyc
 .pytest_cache/
