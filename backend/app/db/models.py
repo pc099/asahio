@@ -396,6 +396,18 @@ class Agent(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default=dict)
+    mode_entered_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    autonomous_authorized_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    autonomous_authorized_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    risk_threshold_overrides: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -551,6 +563,8 @@ class CallTrace(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     trace_metadata: Mapped[Optional[dict]] = mapped_column("trace_metadata", JSONB, default=dict)
+    risk_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    intervention_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -801,3 +815,90 @@ class StructuralRecord(Base):
 
     agent: Mapped["Agent"] = relationship("Agent")
     organisation: Mapped["Organisation"] = relationship("Organisation")
+
+
+class InterventionLog(Base):
+    """Immutable record of every intervention decision on the gateway path."""
+
+    __tablename__ = "intervention_logs"
+    __table_args__ = (
+        Index("ix_intervention_logs_org_created", "organisation_id", "created_at"),
+        Index("ix_intervention_logs_agent_id", "agent_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    call_trace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("call_traces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    intervention_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    intervention_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    risk_score: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
+    risk_factors: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    action_taken: Mapped[str] = mapped_column(String(50), nullable=False)
+    action_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    original_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    final_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    prompt_modified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    was_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+    agent: Mapped[Optional["Agent"]] = relationship("Agent")
+
+
+class ModeTransitionLog(Base):
+    """Audit trail for agent intervention mode transitions."""
+
+    __tablename__ = "mode_transition_logs"
+    __table_args__ = (
+        Index("ix_mode_transitions_org_agent", "organisation_id", "agent_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    previous_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(50), nullable=False)
+    baseline_confidence: Mapped[Optional[float]] = mapped_column(
+        Numeric(5, 4), nullable=True
+    )
+    evidence: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    operator_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+    agent: Mapped["Agent"] = relationship("Agent")

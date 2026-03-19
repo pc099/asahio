@@ -42,6 +42,12 @@ export default function SettingsPage() {
         >
           Security
         </Link>
+        <Link
+          href={`/${orgSlug}/settings/providers`}
+          className="px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Providers
+        </Link>
       </div>
 
       {isLoading ? (

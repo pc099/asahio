@@ -5,12 +5,12 @@ import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
-from app.api import aba, admin, agents, analytics, auth, billing, gateway, governance, keys, models, orgs, routing, traces
+from app.api import aba, admin, agents, analytics, auth, billing, gateway, governance, health, interventions, keys, models, orgs, routing, traces
 from app.config import get_settings
 from app.db import engine as _db_engine_mod
 from app.db.models import Base
@@ -19,6 +19,8 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.cors_preflight import CORSPreflightMiddleware
 from app.middleware.metering import MeteringMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_id import RequestIDFilter, RequestIDMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +168,12 @@ def create_app() -> FastAPI:
             {"name": "auth", "description": "Authentication and session management"},
             {"name": "admin", "description": "Platform administration"},
             {"name": "aba", "description": "Agent Behavioral Analytics — fingerprinting, anomalies, risk priors"},
+            {"name": "interventions", "description": "Intervention logs, fleet mode overview, and risk analytics"},
         ],
     )
+
+    # Add request ID filter to root logger for correlation
+    logging.getLogger().addFilter(RequestIDFilter())
 
     # CORS: last added runs first. Preflight handles OPTIONS with 200; CORSMiddleware adds headers to other responses.
     origins = settings.get_cors_origins()
@@ -183,6 +189,8 @@ def create_app() -> FastAPI:
         allow_credentials,
     )
 
+    app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(AuditMiddleware)
     app.add_middleware(MeteringMiddleware)
     app.add_middleware(RateLimitMiddleware)
@@ -194,7 +202,12 @@ def create_app() -> FastAPI:
         allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["*"],
+        expose_headers=[
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+            "X-Request-ID",
+        ],
     )
     # Handle OPTIONS with 200 + CORS headers first (avoids 400 from CORSMiddleware in some setups)
     app.add_middleware(
@@ -218,29 +231,13 @@ def create_app() -> FastAPI:
     app.include_router(traces.router, tags=["traces"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(aba.router, tags=["aba"])
+    app.include_router(interventions.router, prefix="/interventions", tags=["interventions"])
+    app.include_router(health.router)
 
     @app.get("/health")
-    async def health():
-        redis_ok = False
-        if hasattr(app.state, "redis") and app.state.redis:
-            try:
-                await app.state.redis.ping()
-                redis_ok = True
-            except Exception:
-                pass
-
-        import os
-        return {
-            "status": "ok",
-            "version": "1.0.0",
-            "redis": "connected" if redis_ok else "unavailable",
-            "cors_origins": settings.get_cors_origins(),
-            "cors_origins_raw": settings.cors_origins,
-            "cors_env": os.environ.get("CORS_ORIGINS", "<NOT SET>"),
-            "cors_origin_regex": settings.cors_origin_regex,
-            "api_docs_enabled": settings.api_docs_enabled,
-            "debug": settings.debug,
-        }
+    async def health_redirect(request: Request):
+        """Backward-compat redirect — calls the readiness endpoint."""
+        return await health.health_ready(request)
 
     return app
 

@@ -20,7 +20,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.engine import get_db
-from app.db.models import CacheType, RequestLog, UsageSnapshot
+from app.db.models import CacheType, CallTrace, RequestLog, UsageSnapshot
 
 router = APIRouter()
 
@@ -354,10 +354,15 @@ async def analytics_requests(
     date_to: Optional[datetime] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Paginated request log with filters."""
+    """Paginated request log with filters, including risk data from CallTrace."""
     org_id = _get_org_id(request)
 
-    query = select(RequestLog).where(RequestLog.organisation_id == org_id)
+    # Outer-join CallTrace to get risk_score and intervention_level
+    query = (
+        select(RequestLog, CallTrace)
+        .outerjoin(CallTrace, CallTrace.request_log_id == RequestLog.id)
+        .where(RequestLog.organisation_id == org_id)
+    )
 
     if model:
         query = query.where(RequestLog.model_used == model)
@@ -368,8 +373,17 @@ async def analytics_requests(
     if date_to:
         query = query.where(RequestLog.created_at <= date_to)
 
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
+    # Count total (on RequestLog only)
+    count_base = select(RequestLog).where(RequestLog.organisation_id == org_id)
+    if model:
+        count_base = count_base.where(RequestLog.model_used == model)
+    if cache_hit is not None:
+        count_base = count_base.where(RequestLog.cache_hit == cache_hit)
+    if date_from:
+        count_base = count_base.where(RequestLog.created_at >= date_from)
+    if date_to:
+        count_base = count_base.where(RequestLog.created_at <= date_to)
+    count_query = select(func.count()).select_from(count_base.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -377,30 +391,42 @@ async def analytics_requests(
     offset = (page - 1) * limit
     query = query.order_by(RequestLog.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
-    logs = result.scalars().all()
+    rows = result.all()
+
+    data = []
+    for row in rows:
+        log = row[0]
+        trace = row[1]
+
+        # Extract risk_factors from trace_metadata (Python, not SQL — avoids SQLite JSON issues)
+        risk_factors = None
+        if trace and trace.trace_metadata:
+            risk_factors = trace.trace_metadata.get("risk_factors")
+
+        data.append({
+            "id": str(log.id),
+            "model_requested": log.model_requested,
+            "model_used": log.model_used,
+            "provider": log.provider,
+            "routing_mode": log.routing_mode,
+            "input_tokens": log.input_tokens,
+            "output_tokens": log.output_tokens,
+            "cost_without_asahi": float(log.cost_without_asahi),
+            "cost_with_asahi": float(log.cost_with_asahi),
+            "savings_usd": float(log.savings_usd),
+            "savings_pct": float(log.savings_pct) if log.savings_pct else None,
+            "cache_hit": log.cache_hit,
+            "cache_tier": log.cache_tier.value if log.cache_tier else None,
+            "latency_ms": log.latency_ms,
+            "status_code": log.status_code,
+            "risk_score": float(trace.risk_score) if trace and trace.risk_score is not None else None,
+            "intervention_level": trace.intervention_level if trace else None,
+            "risk_factors": risk_factors,
+            "created_at": log.created_at.isoformat(),
+        })
 
     return {
-        "data": [
-            {
-                "id": str(log.id),
-                "model_requested": log.model_requested,
-                "model_used": log.model_used,
-                "provider": log.provider,
-                "routing_mode": log.routing_mode,
-                "input_tokens": log.input_tokens,
-                "output_tokens": log.output_tokens,
-                "cost_without_asahi": float(log.cost_without_asahi),
-                "cost_with_asahi": float(log.cost_with_asahi),
-                "savings_usd": float(log.savings_usd),
-                "savings_pct": float(log.savings_pct) if log.savings_pct else None,
-                "cache_hit": log.cache_hit,
-                "cache_tier": log.cache_tier.value if log.cache_tier else None,
-                "latency_ms": log.latency_ms,
-                "status_code": log.status_code,
-                "created_at": log.created_at.isoformat(),
-            }
-            for log in logs
-        ],
+        "data": data,
         "pagination": {
             "page": page,
             "limit": limit,

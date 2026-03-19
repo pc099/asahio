@@ -1,0 +1,1 @@
+{"request_id":"75118ddb69d0","timestamp":"2026-03-19T08:23:15.858979Z","organization_id":"d95a9d95-2faf-4460-8c9e-4c1febafb1f1","user_id":null,"task_type":null,"model_selected":"gpt-4-turbo","cache_hit":false,"input_tokens":10,"output_tokens":9,"total_tokens":19,"latency_ms":11295,"cost":0.00037,"routing_reason":"Fallback after claude-3-5-sonnet failed","quality_score":4.6}

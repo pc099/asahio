@@ -15,6 +15,7 @@ import {
   Server,
   Settings,
   Shield,
+  ShieldAlert,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { icon: Activity, label: "Traces", path: "/traces" },
   { icon: BarChart2, label: "Analytics", path: "/analytics" },
   { icon: Brain, label: "ABA", path: "/aba" },
+  { icon: ShieldAlert, label: "Interventions", path: "/interventions" },
   { icon: GitBranch, label: "Routing", path: "/routing" },
   { icon: Server, label: "Models", path: "/models" },
   { icon: CreditCard, label: "Billing", path: "/billing" },

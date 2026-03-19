@@ -4,8 +4,39 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getRequestLogs, type RequestLogEntry } from "@/lib/api";
-import { Activity, ChevronDown, ChevronRight, Database, Zap } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Database, Shield, Zap } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
+
+const INTERVENTION_LABELS: Record<number, string> = {
+  0: "LOG",
+  1: "FLAG",
+  2: "AUGMENT",
+  3: "REROUTE",
+  4: "BLOCK",
+};
+
+function RiskBadge({ score }: { score: number }) {
+  let color = "bg-green-500/10 text-green-400";
+  if (score >= 0.7) color = "bg-red-500/10 text-red-400";
+  else if (score >= 0.5) color = "bg-orange-500/10 text-orange-400";
+  else if (score >= 0.3) color = "bg-yellow-500/10 text-yellow-400";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      {score.toFixed(3)}
+    </span>
+  );
+}
+
+function InterventionLabel({ level }: { level: number }) {
+  const label = INTERVENTION_LABELS[level] ?? `L${level}`;
+  const colors: Record<number, string> = {
+    1: "text-yellow-400",
+    2: "text-blue-400",
+    3: "text-orange-400",
+    4: "text-red-400",
+  };
+  return <span className={`text-xs font-medium ${colors[level] ?? "text-muted-foreground"}`}>{label}</span>;
+}
 
 export default function TracesPage() {
   const params = useParams();
@@ -76,6 +107,8 @@ export default function TracesPage() {
                   <th className="px-4 py-3 font-medium text-muted-foreground">Tokens</th>
                   <th className="px-4 py-3 font-medium text-muted-foreground">Latency</th>
                   <th className="px-4 py-3 font-medium text-muted-foreground">Cache</th>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Risk</th>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Intervention</th>
                   <th className="px-4 py-3 font-medium text-muted-foreground">Savings</th>
                 </tr>
               </thead>
@@ -164,6 +197,20 @@ function TraceRow({
           )}
         </td>
         <td className="px-4 py-3">
+          {log.risk_score != null ? (
+            <RiskBadge score={log.risk_score} />
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          {log.intervention_level != null && log.intervention_level > 0 ? (
+            <InterventionLabel level={log.intervention_level} />
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </td>
+        <td className="px-4 py-3">
           {log.savings_usd > 0 ? (
             <span className="text-emerald-400">{formatCurrency(log.savings_usd)}</span>
           ) : (
@@ -173,7 +220,7 @@ function TraceRow({
       </tr>
       {expanded && (
         <tr className="bg-muted/20">
-          <td colSpan={9} className="px-8 py-4">
+          <td colSpan={11} className="px-8 py-4">
             <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
               <div>
                 <span className="text-muted-foreground">Request ID</span>
@@ -207,7 +254,34 @@ function TraceRow({
                 <span className="text-muted-foreground">Status</span>
                 <p className="text-foreground">{log.status_code}</p>
               </div>
+              {log.risk_score != null && (
+                <div>
+                  <span className="text-muted-foreground">Risk Score</span>
+                  <p className="text-foreground">{log.risk_score.toFixed(4)}</p>
+                </div>
+              )}
+              {log.intervention_level != null && (
+                <div>
+                  <span className="text-muted-foreground">Intervention Level</span>
+                  <p className="text-foreground">{INTERVENTION_LABELS[log.intervention_level] ?? `L${log.intervention_level}`}</p>
+                </div>
+              )}
             </div>
+            {log.risk_factors && Object.keys(log.risk_factors).length > 0 && (
+              <div className="mt-4 border-t border-border/50 pt-3">
+                <span className="text-muted-foreground text-xs flex items-center gap-1 mb-2">
+                  <Shield className="h-3 w-3" /> Risk Factors
+                </span>
+                <div className="flex flex-wrap gap-3">
+                  {Object.entries(log.risk_factors).map(([factor, score]) => (
+                    <div key={factor} className="text-xs">
+                      <span className="text-muted-foreground">{factor}:</span>{" "}
+                      <span className="font-mono text-foreground">{(score as number).toFixed(3)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </td>
         </tr>
       )}

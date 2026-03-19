@@ -45,6 +45,9 @@ class TracePayload:
     routing_reason: Optional[str] = None
     routing_factors: Optional[dict] = None
     routing_confidence: Optional[float] = None
+    risk_score: Optional[float] = None
+    intervention_level: Optional[int] = None
+    risk_factors: Optional[dict] = None
     error_message: Optional[str] = None
     trace_metadata: Optional[dict] = None
 
@@ -72,6 +75,11 @@ async def write_trace(payload: TracePayload) -> None:
             endpoint_uuid = _to_uuid(payload.model_endpoint_id)
             api_key_uuid = _to_uuid(payload.api_key_id)
 
+            # Merge risk_factors into trace_metadata
+            meta = dict(payload.trace_metadata or {})
+            if payload.risk_factors:
+                meta["risk_factors"] = payload.risk_factors
+
             # 1. Write CallTrace
             call_trace = CallTrace(
                 organisation_id=org_uuid,
@@ -90,7 +98,9 @@ async def write_trace(payload: TracePayload) -> None:
                 input_tokens=payload.input_tokens,
                 output_tokens=payload.output_tokens,
                 latency_ms=payload.latency_ms,
-                trace_metadata=payload.trace_metadata or {},
+                risk_score=payload.risk_score,
+                intervention_level=payload.intervention_level,
+                trace_metadata=meta,
             )
             session.add(call_trace)
             await session.flush()

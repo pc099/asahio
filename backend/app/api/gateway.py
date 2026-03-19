@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -120,6 +120,9 @@ def _build_metadata(result: GatewayResult, external_session_id: str | None) -> d
         "routing_confidence": result.routing_confidence,
         "policy_action": result.policy_action,
         "policy_reason": result.policy_reason,
+        "risk_score": result.risk_score,
+        "risk_factors": result.risk_factors,
+        "intervention_level": result.intervention_level,
         "request_id": result.request_id,
     }
     return metadata
@@ -185,6 +188,36 @@ async def chat_completions(
     ).upper()
     model_override = body.model or (model_endpoint.model_id if model_endpoint else None)
 
+    # Look up fingerprint for risk scoring (fast Redis-cached in production)
+    fingerprint_hallucination_rate = None
+    agent_type_hint = None
+    threshold_overrides = None
+    session_step = None
+    if agent:
+        try:
+            from app.db.models import AgentFingerprint
+            fp_result = await db.execute(
+                select(AgentFingerprint).where(AgentFingerprint.agent_id == agent.id)
+            )
+            fp = fp_result.scalar_one_or_none()
+            if fp:
+                fingerprint_hallucination_rate = float(fp.hallucination_rate)
+        except Exception:
+            pass  # Not critical — risk scorer has fallbacks
+        threshold_overrides = agent.risk_threshold_overrides
+    if session:
+        try:
+            from app.db.models import CallTrace as CT
+            step_result = await db.execute(
+                select(func.count(CT.id)).where(
+                    CT.agent_session_id == session.id,
+                    CT.organisation_id == uuid.UUID(org_id),
+                )
+            )
+            session_step = (step_result.scalar() or 0) + 1
+        except Exception:
+            session_step = None
+
     result: GatewayResult = await run_inference(
         prompt=prompt,
         routing_mode=effective_routing_mode,
@@ -199,6 +232,10 @@ async def chat_completions(
         provider_hint=model_endpoint.provider if model_endpoint else None,
         use_mock=get_settings().debug,
         redis=redis,
+        session_step=session_step,
+        fingerprint_hallucination_rate=fingerprint_hallucination_rate,
+        agent_type=agent_type_hint,
+        threshold_overrides=threshold_overrides,
     )
     result.model_requested = body.model or (model_endpoint.model_id if model_endpoint else body.model)
 
@@ -234,6 +271,9 @@ async def chat_completions(
         routing_reason=result.routing_reason,
         routing_factors=result.routing_factors,
         routing_confidence=result.routing_confidence,
+        risk_score=result.risk_score,
+        intervention_level=result.intervention_level,
+        risk_factors=result.risk_factors,
         error_message=result.error_message,
     )
     asyncio.create_task(write_trace(trace_payload))

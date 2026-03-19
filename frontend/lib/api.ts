@@ -57,6 +57,9 @@ export interface RequestLogEntry {
   cache_tier: string | null;
   latency_ms: number | null;
   status_code: number;
+  risk_score: number | null;
+  intervention_level: number | null;
+  risk_factors: Record<string, number> | null;
   created_at: string;
 }
 
@@ -183,6 +186,9 @@ export interface CompletionMetadata {
   routing_confidence?: number | null;
   policy_action?: string | null;
   policy_reason?: string | null;
+  risk_score?: number | null;
+  risk_factors?: Record<string, unknown>;
+  intervention_level?: number | null;
 }
 
 export interface ChatCompletionResponse {
@@ -826,5 +832,136 @@ export async function getABAColdStartStatus(agentId: string, token?: string, org
   return fetchApi<ABAColdStartStatus>(`/aba/cold-start-status/${agentId}`, {}, token, orgHeaders(orgSlug));
 }
 
+// — Interventions ————————————————————————————————————
+
+export interface InterventionLogEntry {
+  id: string;
+  agent_id: string | null;
+  call_trace_id: string | null;
+  request_id: string | null;
+  intervention_level: number;
+  intervention_mode: string;
+  risk_score: number;
+  risk_factors: Record<string, unknown>;
+  action_taken: string;
+  action_detail: string | null;
+  original_model: string | null;
+  final_model: string | null;
+  prompt_modified: boolean;
+  was_blocked: boolean;
+  created_at: string | null;
+}
+
+export interface InterventionStats {
+  data: Array<{ day: string; level: number; count: number }>;
+  days: number;
+}
+
+export interface FleetModeOverview {
+  mode_distribution: Record<string, number>;
+  intervention_summary: {
+    total: number;
+    blocked: number;
+    rerouted: number;
+    augmented: number;
+    flagged: number;
+    period_days: number;
+  };
+}
+
+export interface ModeEligibility {
+  agent_id: string;
+  current_mode: string;
+  eligible: boolean;
+  suggested_mode: string | null;
+  reason: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface ModeTransitionEntry {
+  id: string;
+  previous_mode: string;
+  new_mode: string;
+  trigger: string;
+  baseline_confidence: number | null;
+  evidence: Record<string, unknown>;
+  operator_user_id: string | null;
+  created_at: string | null;
+}
+
+export async function getInterventions(
+  params: { agent_id?: string; level?: number; limit?: number; offset?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.level !== undefined) searchParams.set("level", String(params.level));
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+  return fetchApi<{ data: InterventionLogEntry[]; pagination: { limit: number; offset: number } }>(
+    `/interventions?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getInterventionStats(days: number = 30, token?: string, orgSlug?: string) {
+  return fetchApi<InterventionStats>(`/interventions/stats?days=${days}`, {}, token, orgHeaders(orgSlug));
+}
+
+export async function getFleetModeOverview(token?: string, orgSlug?: string) {
+  return fetchApi<FleetModeOverview>("/interventions/fleet-overview", {}, token, orgHeaders(orgSlug));
+}
+
+export async function getModeEligibility(agentId: string, token?: string, orgSlug?: string) {
+  return fetchApi<ModeEligibility>(`/agents/${agentId}/mode-eligibility`, {}, token, orgHeaders(orgSlug));
+}
+
+export async function transitionMode(
+  agentId: string,
+  data: { target_mode: string; operator_authorized?: boolean },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ agent_id: string; previous_mode: string; new_mode: string; transition_reason: string }>(
+    `/agents/${agentId}/mode-transition`,
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getModeHistory(
+  agentId: string,
+  params: { limit?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  return fetchApi<{ data: ModeTransitionEntry[] }>(
+    `/agents/${agentId}/mode-history?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Provider Health
+// ---------------------------------------------------------------------------
+
+export interface ProviderHealth {
+  provider: string;
+  status: string;
+  last_checked: number;
+  error: string | null;
+}
+
+export async function getProviderHealth(token?: string) {
+  return fetchApi<{ providers: ProviderHealth[] }>("/health/providers", {}, token);
+}
 
 

@@ -12,7 +12,17 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.engine import get_db
-from app.db.models import Agent, AgentSession, CallTrace, InterventionMode, MemberRole, ModelEndpoint, RoutingMode
+from app.db.models import (
+    Agent,
+    AgentFingerprint,
+    AgentSession,
+    CallTrace,
+    InterventionMode,
+    MemberRole,
+    ModelEndpoint,
+    ModeTransitionLog,
+    RoutingMode,
+)
 from app.middleware.rbac import require_role
 
 router = APIRouter()
@@ -273,4 +283,162 @@ async def get_agent_stats(
         "total_input_tokens": int(row[3] or 0),
         "total_output_tokens": int(row[4] or 0),
         "total_sessions": session_count,
+    }
+
+
+# ── Mode transition endpoints ─────────────────────────────────────────
+
+
+class ModeTransitionRequest(BaseModel):
+    target_mode: str
+    operator_authorized: bool = False
+
+
+@router.get("/{agent_id}/mode-eligibility")
+async def get_mode_eligibility(
+    agent_id: str, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Check if an agent is eligible for a mode upgrade."""
+    org_id = await _get_org_id(request)
+    agent = await db.get(Agent, uuid.UUID(agent_id))
+    if not agent or agent.organisation_id != org_id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from app.services.mode_engine import ModeTransitionEngine
+
+    engine = ModeTransitionEngine()
+
+    # Get fingerprint for baseline_confidence
+    fp_result = await db.execute(
+        select(AgentFingerprint).where(AgentFingerprint.agent_id == agent.id)
+    )
+    fp = fp_result.scalar_one_or_none()
+    baseline_confidence = float(fp.baseline_confidence) if fp else 0.0
+    total_observations = fp.total_observations if fp else 0
+
+    eligibility = engine.check_eligibility(
+        current_mode=agent.intervention_mode.value,
+        baseline_confidence=baseline_confidence,
+        mode_entered_at=agent.mode_entered_at,
+        total_observations=total_observations,
+    )
+
+    return {
+        "agent_id": str(agent.id),
+        "current_mode": agent.intervention_mode.value,
+        "eligible": eligibility.eligible,
+        "suggested_mode": eligibility.suggested_mode,
+        "reason": eligibility.reason,
+        "evidence": eligibility.evidence,
+    }
+
+
+@router.post("/{agent_id}/mode-transition", dependencies=[require_role(MemberRole.ADMIN)])
+async def transition_mode(
+    agent_id: str,
+    body: ModeTransitionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Request a mode transition for an agent."""
+    org_id = await _get_org_id(request)
+    agent = await db.get(Agent, uuid.UUID(agent_id))
+    if not agent or agent.organisation_id != org_id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from datetime import datetime, timezone
+    from app.services.mode_engine import ModeTransitionEngine
+
+    engine = ModeTransitionEngine()
+
+    # Get fingerprint for baseline_confidence
+    fp_result = await db.execute(
+        select(AgentFingerprint).where(AgentFingerprint.agent_id == agent.id)
+    )
+    fp = fp_result.scalar_one_or_none()
+    baseline_confidence = float(fp.baseline_confidence) if fp else 0.0
+
+    valid, reason = engine.validate_transition(
+        current_mode=agent.intervention_mode.value,
+        target_mode=body.target_mode,
+        baseline_confidence=baseline_confidence,
+        mode_entered_at=agent.mode_entered_at,
+        operator_authorized=body.operator_authorized,
+    )
+
+    if not valid:
+        raise HTTPException(status_code=400, detail=reason)
+
+    previous_mode = agent.intervention_mode.value
+    target_mode = _to_intervention_mode(body.target_mode)
+
+    # Create transition log
+    user_id = getattr(request.state, "user_id", None)
+    transition_log = ModeTransitionLog(
+        organisation_id=org_id,
+        agent_id=agent.id,
+        previous_mode=previous_mode,
+        new_mode=target_mode.value,
+        trigger="operator_request",
+        baseline_confidence=baseline_confidence,
+        evidence={"reason": reason, "operator_authorized": body.operator_authorized},
+        operator_user_id=uuid.UUID(user_id) if user_id else None,
+    )
+    db.add(transition_log)
+
+    # Apply transition
+    agent.intervention_mode = target_mode
+    agent.mode_entered_at = datetime.now(timezone.utc)
+    if target_mode == InterventionMode.AUTONOMOUS:
+        agent.autonomous_authorized_at = datetime.now(timezone.utc)
+        agent.autonomous_authorized_by = uuid.UUID(user_id) if user_id else None
+
+    await db.flush()
+
+    return {
+        "agent_id": str(agent.id),
+        "previous_mode": previous_mode,
+        "new_mode": target_mode.value,
+        "transition_reason": reason,
+    }
+
+
+@router.get("/{agent_id}/mode-history")
+async def get_mode_history(
+    agent_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """Get mode transition history for an agent."""
+    org_id = await _get_org_id(request)
+    agent = await db.get(Agent, uuid.UUID(agent_id))
+    if not agent or agent.organisation_id != org_id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    result = await db.execute(
+        select(ModeTransitionLog)
+        .where(
+            ModeTransitionLog.organisation_id == org_id,
+            ModeTransitionLog.agent_id == agent.id,
+        )
+        .order_by(ModeTransitionLog.created_at.desc())
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+
+    return {
+        "data": [
+            {
+                "id": str(log.id),
+                "previous_mode": log.previous_mode,
+                "new_mode": log.new_mode,
+                "trigger": log.trigger,
+                "baseline_confidence": float(log.baseline_confidence) if log.baseline_confidence else None,
+                "evidence": log.evidence or {},
+                "operator_user_id": str(log.operator_user_id) if log.operator_user_id else None,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
     }
