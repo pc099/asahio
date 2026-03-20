@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listAgents, createAgent, type AgentItem } from "@/lib/api";
-import { Bot, Plus, Power, PowerOff } from "lucide-react";
+import { listAgents, createAgent, updateAgent, archiveAgent, type AgentItem } from "@/lib/api";
+import { Archive, Bot, Pencil, Plus, Power, PowerOff, X } from "lucide-react";
 
 const ROUTING_MODES = ["AUTO", "EXPLICIT", "GUIDED"] as const;
 const INTERVENTION_MODES = ["OBSERVE", "ASSISTED", "AUTONOMOUS"] as const;
@@ -24,7 +25,15 @@ export default function AgentsPage() {
   const queryClient = useQueryClient();
 
   const [showCreate, setShowCreate] = useState(false);
+  const [editAgent, setEditAgent] = useState<AgentItem | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<AgentItem | null>(null);
   const [form, setForm] = useState({
+    name: "",
+    description: "",
+    routing_mode: "AUTO" as string,
+    intervention_mode: "OBSERVE" as string,
+  });
+  const [editForm, setEditForm] = useState({
     name: "",
     description: "",
     routing_mode: "AUTO" as string,
@@ -48,6 +57,33 @@ export default function AgentsPage() {
       setForm({ name: "", description: "", routing_mode: "AUTO", intervention_mode: "OBSERVE" });
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof updateAgent>[1] }) =>
+      updateAgent(id, data, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agents", orgSlug] });
+      setEditAgent(null);
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (agentId: string) => archiveAgent(agentId, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agents", orgSlug] });
+      setArchiveTarget(null);
+    },
+  });
+
+  const openEdit = (agent: AgentItem) => {
+    setEditForm({
+      name: agent.name,
+      description: agent.description || "",
+      routing_mode: agent.routing_mode,
+      intervention_mode: agent.intervention_mode,
+    });
+    setEditAgent(agent);
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -161,12 +197,25 @@ export default function AgentsPage() {
                 <th className="px-4 py-3 font-medium text-muted-foreground">Intervention</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">Created</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {agents.map((agent) => (
-                <tr key={agent.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-medium text-foreground">{agent.name}</td>
+                <tr key={agent.id} className={`hover:bg-muted/30 transition-colors ${!agent.is_active ? "opacity-50" : ""}`}>
+                  <td className="px-4 py-3 font-medium">
+                    <Link
+                      href={`/${orgSlug}/agents/${agent.id}`}
+                      className="text-foreground hover:text-asahio transition-colors"
+                    >
+                      {agent.name}
+                    </Link>
+                    {!agent.is_active && (
+                      <span className="ml-2 inline-block rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Archived
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{agent.slug}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${MODE_BADGE[agent.routing_mode] ?? ""}`}>
@@ -192,10 +241,145 @@ export default function AgentsPage() {
                   <td className="px-4 py-3 text-muted-foreground">
                     {new Date(agent.created_at).toLocaleDateString()}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEdit(agent)}
+                        className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      {agent.is_active && (
+                        <button
+                          onClick={() => setArchiveTarget(agent)}
+                          className="rounded p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          title="Archive"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Edit Agent</h2>
+              <button onClick={() => setEditAgent(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Description</label>
+                <input
+                  type="text"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Routing Mode</label>
+                  <select
+                    value={editForm.routing_mode}
+                    onChange={(e) => setEditForm({ ...editForm, routing_mode: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {ROUTING_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Intervention Mode</label>
+                  <select
+                    value={editForm.intervention_mode}
+                    onChange={(e) => setEditForm({ ...editForm, intervention_mode: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {INTERVENTION_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setEditAgent(null)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  editMutation.mutate({
+                    id: editAgent.id,
+                    data: {
+                      name: editForm.name,
+                      description: editForm.description || undefined,
+                      routing_mode: editForm.routing_mode,
+                      intervention_mode: editForm.intervention_mode,
+                    },
+                  })
+                }
+                disabled={!editForm.name || editMutation.isPending}
+                className="rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark disabled:opacity-50"
+              >
+                {editMutation.isPending ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+            {editMutation.isError && (
+              <p className="mt-2 text-sm text-red-500">{String(editMutation.error)}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Archive Confirmation */}
+      {archiveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Archive Agent</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Are you sure you want to archive <strong className="text-foreground">{archiveTarget.name}</strong>? The agent will be deactivated and no longer receive traffic.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setArchiveTarget(null)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => archiveMutation.mutate(archiveTarget.id)}
+                disabled={archiveMutation.isPending}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {archiveMutation.isPending ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

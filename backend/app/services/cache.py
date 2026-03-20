@@ -106,6 +106,21 @@ class RedisCache:
             else:
                 self._pinecone_index = pc.Index(settings.pinecone_index_name)
                 logger.info("Connected to Pinecone index: %s", settings.pinecone_index_name)
+
+            # Validate embedding dimensions match the Pinecone index
+            embed_dims = get_vector_dim()
+            expected_dims = settings.embedding_dimensions
+            if embed_dims != expected_dims:
+                logger.error(
+                    "Embedding dimension mismatch: provider produces %d dims "
+                    "but Pinecone index expects %d dims. Set EMBEDDING_PROVIDER=cohere "
+                    "and COHERE_API_KEY to fix. Semantic cache disabled.",
+                    embed_dims,
+                    expected_dims,
+                )
+                self._pinecone_index = None
+                return None
+
             return self._pinecone_index
         except Exception as exc:
             logger.warning("Could not connect to Pinecone — semantic cache disabled: %s", exc)

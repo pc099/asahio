@@ -4,19 +4,25 @@ import { useCallback, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ArrowLeft,
   Bot,
   CheckCircle2,
   Clock,
   FileBarChart,
   GitBranch,
+  BarChart2,
+  Pencil,
   Shield,
   ShieldAlert,
+  X,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import {
+  archiveAgent,
   getABAFingerprint,
+  getAgentStats,
   getModeEligibility,
   getModeHistory,
   listAgents,
@@ -24,6 +30,7 @@ import {
   updateAgent,
   type ABAFingerprint,
   type AgentItem,
+  type AgentStats,
   type ModeEligibility,
   type ModeTransitionEntry,
 } from "@/lib/api";
@@ -34,8 +41,17 @@ const MODE_COLORS: Record<string, string> = {
   AUTONOMOUS: "bg-purple-500/10 text-purple-400 border-purple-500/30",
 };
 
+const ROUTING_MODE_COLORS: Record<string, string> = {
+  AUTO: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  EXPLICIT: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  GUIDED: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+};
+
+const ROUTING_MODES = ["AUTO", "EXPLICIT", "GUIDED"] as const;
+const INTERVENTION_MODES = ["OBSERVE", "ASSISTED", "AUTONOMOUS"] as const;
+
 function ModeBadge({ mode }: { mode: string }) {
-  const color = MODE_COLORS[mode] ?? "bg-gray-500/10 text-gray-400";
+  const color = MODE_COLORS[mode] ?? ROUTING_MODE_COLORS[mode] ?? "bg-gray-500/10 text-gray-400";
   return (
     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${color}`}>
       {mode}
@@ -56,7 +72,6 @@ function ConfidenceMeter({ confidence, thresholds }: { confidence: number; thres
           className="absolute inset-y-0 left-0 rounded-full bg-asahio transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
-        {/* Threshold markers */}
         <div
           className="absolute inset-y-0 w-px bg-yellow-400"
           style={{ left: `${thresholds.assisted * 100}%` }}
@@ -85,8 +100,16 @@ export default function AgentDetailPage() {
   const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
   const agentId = typeof params?.agentId === "string" ? params.agentId : "";
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [targetMode, setTargetMode] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "evidence">("overview");
+  const [tab, setTab] = useState<"overview" | "evidence" | "stats">("overview");
+  const [editForm, setEditForm] = useState({
+    name: "",
+    description: "",
+    routing_mode: "AUTO",
+    intervention_mode: "OBSERVE",
+  });
 
   const { data: eligibility, isLoading: eligLoading } = useQuery({
     queryKey: ["mode-eligibility", orgSlug, agentId],
@@ -114,18 +137,43 @@ export default function AgentDetailPage() {
   });
   const agent = agentsData?.data?.find((a) => a.id === agentId);
 
+  const { data: stats } = useQuery({
+    queryKey: ["agent-stats", orgSlug, agentId],
+    queryFn: () => getAgentStats(agentId, undefined, orgSlug),
+    enabled: !!orgSlug && !!agentId,
+    retry: false,
+  });
+
   const transitionMutation = useMutation({
     mutationFn: (data: { target_mode: string; operator_authorized: boolean }) =>
       transitionMode(agentId, data, undefined, orgSlug),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mode-eligibility", orgSlug, agentId] });
       queryClient.invalidateQueries({ queryKey: ["mode-history", orgSlug, agentId] });
+      queryClient.invalidateQueries({ queryKey: ["agents", orgSlug] });
       setShowAuthModal(false);
       setTargetMode(null);
     },
   });
 
-  const currentMode = eligibility?.current_mode ?? "OBSERVE";
+  const editMutation = useMutation({
+    mutationFn: (data: Parameters<typeof updateAgent>[1]) =>
+      updateAgent(agentId, data, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agents", orgSlug] });
+      setShowEditModal(false);
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: () => archiveAgent(agentId, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agents", orgSlug] });
+      router.push(`/${orgSlug}/agents`);
+    },
+  });
+
+  const currentMode = eligibility?.current_mode ?? agent?.intervention_mode ?? "OBSERVE";
   const confidence = (eligibility?.evidence?.baseline_confidence as number) ?? 0;
   const transitions = history?.data ?? [];
 
@@ -144,6 +192,16 @@ export default function AgentDetailPage() {
     }
   };
 
+  const openEdit = () => {
+    setEditForm({
+      name: agent?.name ?? "",
+      description: agent?.description ?? "",
+      routing_mode: agent?.routing_mode ?? "AUTO",
+      intervention_mode: agent?.intervention_mode ?? "OBSERVE",
+    });
+    setShowEditModal(true);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -157,15 +215,37 @@ export default function AgentDetailPage() {
         </Link>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Bot className="h-6 w-6 text-asahio" />
-            Agent Detail
+            {agent?.name ?? "Agent Detail"}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 font-mono">{agentId}</p>
+          {agent?.description && (
+            <p className="text-sm text-muted-foreground mt-1">{agent.description}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-1 font-mono">{agentId}</p>
         </div>
-        <ModeBadge mode={currentMode} />
+        <div className="flex items-center gap-2">
+          <ModeBadge mode={agent?.routing_mode ?? "AUTO"} />
+          <ModeBadge mode={currentMode} />
+          <button
+            onClick={openEdit}
+            className="rounded-md border border-border p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Edit agent"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          {agent?.is_active && (
+            <button
+              onClick={() => setShowArchiveModal(true)}
+              className="rounded-md border border-red-500/30 p-2 text-red-400 hover:bg-red-500/10 transition-colors"
+              title="Archive agent"
+            >
+              <Archive className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Eligibility Banner */}
@@ -206,6 +286,18 @@ export default function AgentDetailPage() {
         </button>
         <button
           type="button"
+          onClick={() => setTab("stats")}
+          className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "stats"
+              ? "border-asahio text-asahio"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <BarChart2 className="h-4 w-4" />
+          Stats
+        </button>
+        <button
+          type="button"
           onClick={() => setTab("evidence")}
           className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
             tab === "evidence"
@@ -217,6 +309,11 @@ export default function AgentDetailPage() {
           Evidence
         </button>
       </div>
+
+      {/* Stats Tab */}
+      {tab === "stats" && (
+        <AgentStatsPanel stats={stats ?? null} />
+      )}
 
       {/* Evidence Tab */}
       {tab === "evidence" && (
@@ -247,11 +344,45 @@ export default function AgentDetailPage() {
       {/* Intervention Thresholds */}
       <ThresholdEditor agentId={agentId} orgSlug={orgSlug} agent={agent} />
 
-      {/* Mode Switcher */}
+      {/* Routing Mode Selector */}
       <div className="rounded-lg border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Mode Control</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Routing Mode</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {(["OBSERVE", "ASSISTED", "AUTONOMOUS"] as const).map((mode) => {
+          {ROUTING_MODES.map((mode) => {
+            const isCurrent = agent?.routing_mode === mode;
+            return (
+              <button
+                key={mode}
+                disabled={isCurrent || editMutation.isPending}
+                onClick={() => editMutation.mutate({ routing_mode: mode })}
+                className={`rounded-lg border p-4 text-left transition-all ${
+                  isCurrent
+                    ? "border-asahio bg-asahio/10"
+                    : "border-border hover:border-asahio/50 hover:bg-muted/30"
+                } disabled:cursor-not-allowed`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-foreground">{mode}</span>
+                  {isCurrent && (
+                    <span className="text-xs text-asahio font-medium">Current</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {mode === "AUTO" && "Six-factor engine picks optimal model"}
+                  {mode === "EXPLICIT" && "Pin to specific model or BYOM endpoint"}
+                  {mode === "GUIDED" && "Rule-based chains with fallback triggers"}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Intervention Mode Switcher */}
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">Intervention Mode</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {INTERVENTION_MODES.map((mode) => {
             const isCurrent = currentMode === mode;
             return (
               <button
@@ -320,6 +451,118 @@ export default function AgentDetailPage() {
 
       </>)}
 
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Edit Agent</h2>
+              <button onClick={() => setShowEditModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Description</label>
+                <input
+                  type="text"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Routing Mode</label>
+                  <select
+                    value={editForm.routing_mode}
+                    onChange={(e) => setEditForm({ ...editForm, routing_mode: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {ROUTING_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Intervention Mode</label>
+                  <select
+                    value={editForm.intervention_mode}
+                    onChange={(e) => setEditForm({ ...editForm, intervention_mode: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {INTERVENTION_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  editMutation.mutate({
+                    name: editForm.name,
+                    description: editForm.description || undefined,
+                    routing_mode: editForm.routing_mode,
+                    intervention_mode: editForm.intervention_mode,
+                  })
+                }
+                disabled={!editForm.name || editMutation.isPending}
+                className="rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark disabled:opacity-50"
+              >
+                {editMutation.isPending ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+            {editMutation.isError && (
+              <p className="mt-2 text-sm text-red-500">{String(editMutation.error)}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Archive Confirmation Modal */}
+      {showArchiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Archive Agent</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Are you sure you want to archive <strong className="text-foreground">{agent?.name}</strong>? The agent will be deactivated and no longer receive traffic.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowArchiveModal(false)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => archiveMutation.mutate()}
+                disabled={archiveMutation.isPending}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {archiveMutation.isPending ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Autonomous Authorization Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -360,6 +603,54 @@ export default function AgentDetailPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent Stats Panel
+// ---------------------------------------------------------------------------
+
+function AgentStatsPanel({ stats }: { stats: AgentStats | null }) {
+  if (!stats) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          No stats available. Send requests through this agent to generate data.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Total Calls" value={stats.total_calls.toLocaleString()} />
+        <StatCard
+          label="Cache Hit Rate"
+          value={`${(stats.cache_hit_rate * 100).toFixed(1)}%`}
+          sub={`${stats.cache_hits} hits`}
+        />
+        <StatCard
+          label="Avg Latency"
+          value={stats.avg_latency_ms != null ? `${stats.avg_latency_ms.toFixed(0)} ms` : "-"}
+        />
+        <StatCard label="Sessions" value={stats.total_sessions.toLocaleString()} />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard label="Input Tokens" value={stats.total_input_tokens.toLocaleString()} />
+        <StatCard label="Output Tokens" value={stats.total_output_tokens.toLocaleString()} />
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xl font-bold text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
 }

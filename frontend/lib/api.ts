@@ -594,6 +594,7 @@ export async function chatCompletions(
     agent_id?: string;
     session_id?: string;
     model_endpoint_id?: string;
+    chain_id?: string;
   },
   token?: string,
   orgSlug?: string
@@ -695,6 +696,30 @@ export async function updateAgent(
   );
 }
 
+export async function archiveAgent(agentId: string, token?: string, orgSlug?: string) {
+  return fetchApi<{ id: string; is_active: boolean }>(
+    `/agents/${agentId}/archive`,
+    { method: "POST" },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export interface AgentStats {
+  agent_id: string;
+  total_calls: number;
+  cache_hits: number;
+  cache_hit_rate: number;
+  avg_latency_ms: number | null;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_sessions: number;
+}
+
+export async function getAgentStats(agentId: string, token?: string, orgSlug?: string) {
+  return fetchApi<AgentStats>(`/agents/${agentId}/stats`, {}, token, orgHeaders(orgSlug));
+}
+
 export async function listModelEndpoints(token?: string, orgSlug?: string) {
   return fetchApi<{ data: ModelEndpointItem[] }>("/models", {}, token, orgHeaders(orgSlug));
 }
@@ -718,6 +743,39 @@ export async function registerModelEndpoint(
   return fetchApi<{ id: string; health_status: string }>(
     "/models/register",
     { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function updateModelEndpoint(
+  endpointId: string,
+  data: {
+    name?: string;
+    provider?: string;
+    model_id?: string;
+    endpoint_url?: string;
+    secret_reference?: string;
+    default_headers?: Record<string, string>;
+    capability_flags?: Record<string, unknown>;
+    fallback_model_id?: string;
+    is_active?: boolean;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<ModelEndpointItem>(
+    `/models/${endpointId}`,
+    { method: "PATCH", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function deleteModelEndpoint(endpointId: string, token?: string, orgSlug?: string) {
+  return fetchApi<void>(
+    `/models/${endpointId}`,
+    { method: "DELETE" },
     token,
     orgHeaders(orgSlug)
   );

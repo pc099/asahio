@@ -6,9 +6,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listModelEndpoints,
   registerModelEndpoint,
+  updateModelEndpoint,
+  deleteModelEndpoint,
   type ModelEndpointItem,
 } from "@/lib/api";
-import { Server, Plus, Circle } from "lucide-react";
+import { Circle, Pencil, Plus, Power, PowerOff, Server, Trash2, X } from "lucide-react";
 
 const PROVIDERS = ["openai", "anthropic", "cohere", "google", "custom"] as const;
 const ENDPOINT_TYPES = ["PLATFORM", "BYOM"] as const;
@@ -26,6 +28,8 @@ export default function ModelsPage() {
   const queryClient = useQueryClient();
 
   const [showRegister, setShowRegister] = useState(false);
+  const [editTarget, setEditTarget] = useState<ModelEndpointItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ModelEndpointItem | null>(null);
   const [form, setForm] = useState({
     name: "",
     provider: "openai" as string,
@@ -34,6 +38,13 @@ export default function ModelsPage() {
     endpoint_url: "",
     fallback_model_id: "",
     validate_health: false,
+  });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    provider: "openai" as string,
+    model_id: "",
+    endpoint_url: "",
+    fallback_model_id: "",
   });
 
   const { data, isLoading } = useQuery({
@@ -56,6 +67,38 @@ export default function ModelsPage() {
       });
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof updateModelEndpoint>[1] }) =>
+      updateModelEndpoint(id, data, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["models", orgSlug] });
+      setEditTarget(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteModelEndpoint(id, undefined, orgSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["models", orgSlug] });
+      setDeleteTarget(null);
+    },
+  });
+
+  const toggleActive = (ep: ModelEndpointItem) => {
+    updateMutation.mutate({ id: ep.id, data: { is_active: !ep.is_active } });
+  };
+
+  const openEdit = (ep: ModelEndpointItem) => {
+    setEditForm({
+      name: ep.name,
+      provider: ep.provider,
+      model_id: ep.model_id,
+      endpoint_url: ep.endpoint_url ?? "",
+      fallback_model_id: ep.fallback_model_id ?? "",
+    });
+    setEditTarget(ep);
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -207,7 +250,9 @@ export default function ModelsPage() {
           {endpoints.map((ep) => (
             <div
               key={ep.id}
-              className="rounded-lg border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
+              className={`rounded-lg border bg-card p-5 shadow-sm transition-shadow hover:shadow-md ${
+                ep.is_active ? "border-border" : "border-border opacity-60"
+              }`}
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -246,8 +291,160 @@ export default function ModelsPage() {
                   </span>
                 </div>
               </div>
+
+              {/* Action buttons */}
+              <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
+                <button
+                  onClick={() => toggleActive(ep)}
+                  disabled={updateMutation.isPending}
+                  className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  title={ep.is_active ? "Deactivate" : "Activate"}
+                >
+                  {ep.is_active ? <PowerOff className="h-3 w-3" /> : <Power className="h-3 w-3" />}
+                  {ep.is_active ? "Deactivate" : "Activate"}
+                </button>
+                <button
+                  onClick={() => openEdit(ep)}
+                  className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  title="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(ep)}
+                  className="flex items-center gap-1.5 rounded-md border border-red-500/30 px-2.5 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
+                  title="Delete"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Edit Endpoint</h2>
+              <button onClick={() => setEditTarget(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
+                  <select
+                    value={editForm.provider}
+                    onChange={(e) => setEditForm({ ...editForm, provider: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    {PROVIDERS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Model ID</label>
+                  <input
+                    type="text"
+                    value={editForm.model_id}
+                    onChange={(e) => setEditForm({ ...editForm, model_id: e.target.value })}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Endpoint URL</label>
+                <input
+                  type="url"
+                  value={editForm.endpoint_url}
+                  onChange={(e) => setEditForm({ ...editForm, endpoint_url: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  placeholder="Optional for BYOM"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Fallback Model ID</label>
+                <input
+                  type="text"
+                  value={editForm.fallback_model_id}
+                  onChange={(e) => setEditForm({ ...editForm, fallback_model_id: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setEditTarget(null)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  updateMutation.mutate({
+                    id: editTarget.id,
+                    data: {
+                      name: editForm.name,
+                      provider: editForm.provider,
+                      model_id: editForm.model_id,
+                      endpoint_url: editForm.endpoint_url || undefined,
+                      fallback_model_id: editForm.fallback_model_id || undefined,
+                    },
+                  })
+                }
+                disabled={!editForm.name || !editForm.model_id || updateMutation.isPending}
+                className="rounded-md bg-asahio px-4 py-2 text-sm font-medium text-white hover:bg-asahio-dark disabled:opacity-50"
+              >
+                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+            {updateMutation.isError && (
+              <p className="mt-2 text-sm text-red-500">{String(updateMutation.error)}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Delete Endpoint</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Are you sure you want to delete <strong className="text-foreground">{deleteTarget.name}</strong> ({deleteTarget.model_id})? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate(deleteTarget.id)}
+                disabled={deleteMutation.isPending}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
