@@ -337,3 +337,75 @@ class TestRiskPrior:
         assert "risk_score" in prior
         assert "observation_count" in prior
         assert "confidence" in prior
+
+
+class TestHallucinationTag:
+    """Tests for POST /aba/calls/{call_id}/tag."""
+
+    @pytest.mark.asyncio
+    async def test_tag_hallucination(
+        self,
+        client: AsyncClient,
+        seed_org: dict,
+    ) -> None:
+        raw_key = seed_org["raw_key"]
+        org = seed_org["org"]
+        agent = await _create_agent(client, raw_key, "ABA Tag Agent")
+        agent_id = agent["id"]
+
+        # Write an observation to create a structural record
+        await _write_observation(str(org.id), agent_id)
+
+        # Get the structural record to find the call_trace_id
+        resp = await client.get(
+            f"/aba/structural-records?agent_id={agent_id}",
+            headers=_auth(raw_key),
+        )
+        assert resp.status_code == 200
+        records = resp.json()["data"]
+        assert len(records) > 0
+
+        call_trace_id = records[0]["call_trace_id"]
+        if call_trace_id is None:
+            # Record has no call_trace_id — skip the rest
+            pytest.skip("No call_trace_id on structural record")
+
+        # Tag as hallucination
+        resp = await client.post(
+            f"/aba/calls/{call_trace_id}/tag",
+            json={"hallucination_detected": True, "notes": "test tag"},
+            headers=_auth(raw_key),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["hallucination_detected"] is True
+        assert body["agent_id"] == agent_id
+
+    @pytest.mark.asyncio
+    async def test_tag_invalid_call_id(
+        self,
+        client: AsyncClient,
+        seed_org: dict,
+    ) -> None:
+        raw_key = seed_org["raw_key"]
+        resp = await client.post(
+            "/aba/calls/not-a-uuid/tag",
+            json={"hallucination_detected": True},
+            headers=_auth(raw_key),
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_tag_not_found(
+        self,
+        client: AsyncClient,
+        seed_org: dict,
+    ) -> None:
+        raw_key = seed_org["raw_key"]
+        fake_id = str(uuid.uuid4())
+        resp = await client.post(
+            f"/aba/calls/{fake_id}/tag",
+            json={"hallucination_detected": True},
+            headers=_auth(raw_key),
+        )
+        assert resp.status_code == 404

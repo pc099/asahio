@@ -124,8 +124,8 @@ class TestModelRegistry:
         models = registry.all()
         assert len(models) >= 3
         names = {m.name for m in models}
-        assert "gpt-4-turbo" in names
-        assert "claude-3-5-sonnet" in names
+        assert "gpt-4o" in names
+        assert "claude-sonnet-4-6" in names
 
     def test_add_and_get(
         self, registry: ModelRegistry, sample_profile: ModelProfile
@@ -165,7 +165,7 @@ class TestModelRegistry:
         assert results == []
 
     def test_contains(self, registry: ModelRegistry) -> None:
-        assert "gpt-4-turbo" in registry
+        assert "gpt-4o" in registry
         assert "nonexistent" not in registry
 
     def test_len(self, registry: ModelRegistry) -> None:

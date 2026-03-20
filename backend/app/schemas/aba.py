@@ -81,6 +81,30 @@ class ColdStartStatus(BaseModel):
     progress_pct: float = Field(ge=0.0, le=100.0)
 
 
+class HallucinationTag(BaseModel):
+    """Request body for tagging a call as hallucinated."""
+
+    hallucination_detected: bool = True
+    notes: str = ""
+
+
+class OrgOverviewResponse(BaseModel):
+    """Organisation-level ABA overview aggregation."""
+
+    total_agents: int
+    total_observations: int
+    avg_baseline_confidence: float
+    avg_hallucination_rate: float
+    avg_cache_hit_rate: float
+    cold_start_agents: int
+    anomaly_count: int
+    top_anomalies: list[AnomalyItem] = Field(default_factory=list)
+    hallucination_distribution: dict[str, int] = Field(
+        default_factory=dict,
+        description="Buckets: 'clean' (0%), 'low' (<5%), 'medium' (5-15%), 'high' (>15%)",
+    )
+
+
 class ObservationCreate(BaseModel):
     """Request body for manual observation ingestion."""
 

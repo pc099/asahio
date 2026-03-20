@@ -177,5 +177,33 @@ async def write_trace(payload: TracePayload) -> None:
                 request_log.id,
                 routing_decision.id,
             )
+
+            # Publish to SSE live trace subscribers
+            try:
+                from app.api.traces import publish_trace_event
+
+                publish_trace_event(payload.org_id, {
+                    "id": str(call_trace.id),
+                    "agent_id": str(agent_uuid) if agent_uuid else None,
+                    "agent_session_id": str(session_uuid) if session_uuid else None,
+                    "request_id": payload.request_id,
+                    "model_requested": payload.model_requested,
+                    "model_used": payload.model_used,
+                    "provider": payload.provider,
+                    "routing_mode": payload.routing_mode,
+                    "intervention_mode": payload.intervention_mode,
+                    "policy_action": payload.policy_action,
+                    "cache_hit": payload.cache_hit,
+                    "cache_tier": payload.cache_tier,
+                    "input_tokens": payload.input_tokens,
+                    "output_tokens": payload.output_tokens,
+                    "latency_ms": payload.latency_ms,
+                    "risk_score": float(payload.risk_score) if payload.risk_score is not None else None,
+                    "intervention_level": payload.intervention_level,
+                    "savings_usd": payload.savings_usd,
+                }
+                )
+            except Exception:
+                logger.debug("SSE publish failed (no subscribers or import error)")
     except Exception:
         logger.exception("Failed to write trace for org %s", payload.org_id)

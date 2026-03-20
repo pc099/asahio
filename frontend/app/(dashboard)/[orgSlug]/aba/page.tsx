@@ -17,8 +17,10 @@ import { KpiCard } from "@/components/charts/kpi-card";
 import {
   getABAFingerprints,
   getABAAnomalies,
+  getABAOrgOverview,
   type ABAFingerprint,
   type ABAAnomaly,
+  type ABAOrgOverview,
 } from "@/lib/api";
 import { formatPercent } from "@/lib/utils";
 
@@ -53,19 +55,20 @@ export default function ABAOverviewPage() {
     enabled: !!orgSlug,
   });
 
+  const { data: overview, isLoading: overviewLoading } = useQuery({
+    queryKey: ["aba-org-overview", orgSlug],
+    queryFn: () => getABAOrgOverview(undefined, orgSlug),
+    enabled: !!orgSlug,
+  });
+
   const fingerprints = fpData?.data ?? [];
   const anomalies = anomalyData?.data ?? [];
 
-  const totalAgents = fingerprints.length;
-  const totalObservations = fingerprints.reduce((s, f) => s + f.total_observations, 0);
-  const avgHallucinationRate =
-    fingerprints.length > 0
-      ? fingerprints.reduce((s, f) => s + f.hallucination_rate, 0) / fingerprints.length
-      : 0;
-  const avgCacheHitRate =
-    fingerprints.length > 0
-      ? fingerprints.reduce((s, f) => s + f.cache_hit_rate, 0) / fingerprints.length
-      : 0;
+  const totalAgents = overview?.total_agents ?? fingerprints.length;
+  const totalObservations = overview?.total_observations ?? fingerprints.reduce((s, f) => s + f.total_observations, 0);
+  const avgHallucinationRate = overview?.avg_hallucination_rate ?? 0;
+  const avgCacheHitRate = overview?.avg_cache_hit_rate ?? 0;
+  const hallucinationDist = overview?.hallucination_distribution ?? {};
 
   const filtered = fingerprints.filter(
     (fp) =>
@@ -73,7 +76,7 @@ export default function ABAOverviewPage() {
       fp.agent_id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const isLoading = fpLoading || anomalyLoading;
+  const isLoading = fpLoading || anomalyLoading || overviewLoading;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -117,6 +120,72 @@ export default function ABAOverviewPage() {
           loading={isLoading}
         />
       </div>
+
+      {/* Hallucination Distribution + Cold Start */}
+      {overview && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <h2 className="text-sm font-semibold text-foreground mb-3">Hallucination Distribution</h2>
+            <div className="space-y-2">
+              {(["clean", "low", "medium", "high"] as const).map((bucket) => {
+                const count = hallucinationDist[bucket] ?? 0;
+                const pct = totalAgents > 0 ? (count / totalAgents) * 100 : 0;
+                const colors: Record<string, string> = {
+                  clean: "bg-emerald-400",
+                  low: "bg-blue-400",
+                  medium: "bg-amber-400",
+                  high: "bg-red-400",
+                };
+                const labels: Record<string, string> = {
+                  clean: "Clean (0%)",
+                  low: "Low (<5%)",
+                  medium: "Medium (5-15%)",
+                  high: "High (>15%)",
+                };
+                return (
+                  <div key={bucket} className="flex items-center gap-3">
+                    <span className="w-24 text-xs text-muted-foreground">{labels[bucket]}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full ${colors[bucket]}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="w-6 text-right text-xs font-mono text-muted-foreground">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-6">
+            <h2 className="text-sm font-semibold text-foreground mb-3">Fleet Health</h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Cold Start Agents</span>
+                <span className="text-sm font-medium text-foreground">{overview.cold_start_agents}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Active Anomalies</span>
+                <span className={`text-sm font-medium ${overview.anomaly_count > 0 ? "text-amber-400" : "text-foreground"}`}>
+                  {overview.anomaly_count}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Avg Confidence</span>
+                <span className="text-sm font-medium text-foreground">
+                  {(overview.avg_baseline_confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Total Observations</span>
+                <span className="text-sm font-medium text-foreground">
+                  {overview.total_observations.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Anomaly Feed */}
       {anomalies.length > 0 && (

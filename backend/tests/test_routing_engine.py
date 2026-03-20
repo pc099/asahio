@@ -18,7 +18,7 @@ class TestAutoRouting:
         decision = routing_engine.route(ctx)
         assert isinstance(decision, RoutingDecision)
         assert decision.selected_model in routing_engine._models
-        assert decision.selected_provider in ("openai", "anthropic")
+        assert decision.selected_provider in ("openai", "anthropic", "google", "deepseek", "mistral")
         assert 0 < decision.confidence <= 1.0
         assert decision.factors.get("mode") == "auto"
 
@@ -39,7 +39,9 @@ class TestAutoRouting:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="AUTO",
-            provider_health={"openai": "unreachable", "anthropic": "healthy"},
+            provider_health={"openai": "unreachable", "anthropic": "healthy",
+                             "google": "unreachable", "deepseek": "unreachable",
+                             "mistral": "unreachable"},
         )
         decision = routing_engine.route(ctx)
         assert decision.selected_provider == "anthropic"
@@ -72,10 +74,10 @@ class TestExplicitRouting:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.confidence == 1.0
         assert decision.factors.get("mode") == "explicit"
 
@@ -107,10 +109,10 @@ class TestGuidedRouting:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="GUIDED",
-            guided_rules={"model_allowlist": ["gpt-4o-mini", "claude-haiku-3-5"]},
+            guided_rules={"model_allowlist": ["gpt-4o-mini", "claude-haiku-4-5"]},
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model in ("gpt-4o-mini", "claude-haiku-3-5")
+        assert decision.selected_model in ("gpt-4o-mini", "claude-haiku-4-5")
         assert decision.factors.get("mode") == "guided"
 
     def test_guided_provider_restriction(self, routing_engine: RoutingEngine) -> None:
@@ -168,7 +170,7 @@ class TestAdvancedGuidedRouting:
             guided_rules={
                 "step_based": [
                     {"step": 1, "model": "gpt-4o-mini"},
-                    {"step": 3, "model": "gpt-4-turbo"},
+                    {"step": 3, "model": "o3"},
                 ]
             },
             session_step=1,
@@ -184,14 +186,14 @@ class TestAdvancedGuidedRouting:
             guided_rules={
                 "step_based": [
                     {"step": 1, "model": "gpt-4o-mini"},
-                    {"step": 3, "model": "gpt-4-turbo"},
+                    {"step": 3, "model": "o3"},
                 ]
             },
             session_step=5,
         )
         decision = routing_engine.route(ctx)
-        # Step 5 >= step 3, so gpt-4-turbo is selected
-        assert decision.selected_model == "gpt-4-turbo"
+        # Step 5 >= step 3, so o3 is selected
+        assert decision.selected_model == "o3"
 
     def test_step_based_no_session_step_skips(self, routing_engine: RoutingEngine) -> None:
         ctx = RoutingContext(
@@ -213,13 +215,13 @@ class TestAdvancedGuidedRouting:
             guided_rules={
                 "time_based": [
                     {"hours": "0-11", "model": "gpt-4o-mini"},
-                    {"hours": "12-23", "model": "gpt-4-turbo"},
+                    {"hours": "12-23", "model": "o3"},
                 ]
             },
             utc_hour=14,
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.factors.get("direct_rule") == "time_based"
 
     def test_time_based_midnight_wrap(self, routing_engine: RoutingEngine) -> None:
@@ -239,12 +241,12 @@ class TestAdvancedGuidedRouting:
             prompt="Hello",
             routing_mode="GUIDED",
             guided_rules={
-                "fallback_chain": ["gpt-4-turbo", "gpt-4o-mini"]
+                "fallback_chain": ["o3", "gpt-4o-mini"]
             },
             provider_health={"openai": "healthy"},
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.factors.get("direct_rule") == "fallback_chain"
 
     def test_fallback_chain_skips_unhealthy(self, routing_engine: RoutingEngine) -> None:
@@ -252,12 +254,12 @@ class TestAdvancedGuidedRouting:
             prompt="Hello",
             routing_mode="GUIDED",
             guided_rules={
-                "fallback_chain": ["gpt-4-turbo", "claude-sonnet-4-5", "gpt-4o-mini"]
+                "fallback_chain": ["o3", "claude-sonnet-4-6", "gpt-4o-mini"]
             },
             provider_health={"openai": "unreachable", "anthropic": "healthy"},
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model == "claude-sonnet-4-5"
+        assert decision.selected_model == "claude-sonnet-4-6"
 
     def test_step_based_takes_priority_over_time_based(self, routing_engine: RoutingEngine) -> None:
         ctx = RoutingContext(
@@ -265,7 +267,7 @@ class TestAdvancedGuidedRouting:
             routing_mode="GUIDED",
             guided_rules={
                 "step_based": [{"step": 1, "model": "gpt-4o-mini"}],
-                "time_based": [{"hours": "0-23", "model": "gpt-4-turbo"}],
+                "time_based": [{"hours": "0-23", "model": "o3"}],
             },
             session_step=1,
             utc_hour=12,
@@ -281,7 +283,7 @@ class TestAdvancedGuidedRouting:
             routing_mode="GUIDED",
             guided_rules={
                 "provider_restriction": "openai",
-                "fallback_chain": ["claude-sonnet-4-5", "gpt-4o-mini"],
+                "fallback_chain": ["claude-sonnet-4-6", "gpt-4o-mini"],
             },
         )
         decision = routing_engine.route(ctx)
@@ -308,39 +310,39 @@ class TestExplicitFallback:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
             model_endpoint_health="unreachable",
             fallback_model_id="gpt-4o-mini",
         )
         decision = routing_engine.route(ctx)
         assert decision.selected_model == "gpt-4o-mini"
         assert decision.factors.get("fallback") is True
-        assert decision.factors.get("original_model") == "gpt-4-turbo"
+        assert decision.factors.get("original_model") == "o3"
         assert decision.confidence == 0.75
 
     def test_explicit_no_fallback_when_healthy(self, routing_engine: RoutingEngine) -> None:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
             model_endpoint_health="healthy",
             fallback_model_id="gpt-4o-mini",
         )
         decision = routing_engine.route(ctx)
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.confidence == 1.0
 
     def test_explicit_no_fallback_when_no_fallback_id(self, routing_engine: RoutingEngine) -> None:
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
             model_endpoint_health="unreachable",
             fallback_model_id=None,
         )
         decision = routing_engine.route(ctx)
         # No fallback available — keeps explicit model
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.confidence == 1.0
 
 
@@ -371,14 +373,14 @@ class TestCapabilityMatch:
     def test_explicit_capability_mismatch_with_fallback(self, routing_engine: RoutingEngine) -> None:
         # Add capability_flags to the model catalog for testing
         models = dict(routing_engine._models)
-        models["gpt-4-turbo"] = dict(models["gpt-4-turbo"])
-        models["gpt-4-turbo"]["capability_flags"] = {"streaming": True}
+        models["o3"] = dict(models["o3"])
+        models["o3"]["capability_flags"] = {"streaming": True}
         engine = RoutingEngine(models=models)
 
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
             capability_flags={"vision": True},
             fallback_model_id="gpt-4o-mini",
         )
@@ -389,18 +391,18 @@ class TestCapabilityMatch:
 
     def test_explicit_capability_match_no_fallback(self, routing_engine: RoutingEngine) -> None:
         models = dict(routing_engine._models)
-        models["gpt-4-turbo"] = dict(models["gpt-4-turbo"])
-        models["gpt-4-turbo"]["capability_flags"] = {"streaming": True, "json_mode": True}
+        models["o3"] = dict(models["o3"])
+        models["o3"]["capability_flags"] = {"streaming": True, "json_mode": True}
         engine = RoutingEngine(models=models)
 
         ctx = RoutingContext(
             prompt="Hello",
             routing_mode="EXPLICIT",
-            model_override="gpt-4-turbo",
+            model_override="o3",
             capability_flags={"streaming": True},
         )
         decision = engine.route(ctx)
-        assert decision.selected_model == "gpt-4-turbo"
+        assert decision.selected_model == "o3"
         assert decision.confidence == 1.0
 
 

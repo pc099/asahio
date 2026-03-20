@@ -63,10 +63,10 @@ class TestModels:
 
     def test_models_returns_all_registered(self, client: TestClient) -> None:
         data = client.get("/models").json()
-        assert data["count"] >= 3
+        assert data["count"] >= 18
         names = {m["name"] for m in data["models"]}
         assert "gpt-4o" in names
-        assert "claude-3-5-sonnet" in names
+        assert "claude-sonnet-4-6" in names
 
     def test_model_profiles_have_pricing(self, client: TestClient) -> None:
         data = client.get("/models").json()
@@ -134,17 +134,23 @@ class TestInfer:
     def test_infer_custom_quality_threshold(
         self, client: TestClient
     ) -> None:
-        """High quality_threshold should route to a high-quality model."""
+        """High quality_threshold via guided mode should route to a premium model."""
         data = client.post(
             "/infer",
-            json={"prompt": "Test", "quality_threshold": 4.5},
+            json={
+                "prompt": "Test",
+                "quality_threshold": 4.5,
+                "routing_mode": "guided",
+                "quality_preference": "max",
+            },
         ).json()
-        # Registry may have gpt-4o, claude-opus-4, claude-3-5-sonnet
-        assert data["model_used"] in [
-            "gpt-4o",
-            "claude-opus-4",
-            "claude-3-5-sonnet",
+        # "max" quality preference sets quality >= 4.5 threshold
+        from src.models.registry import ModelRegistry
+        registry = ModelRegistry()
+        high_quality = [
+            m.name for m in registry.all() if m.quality_score >= 4.5
         ]
+        assert data["model_used"] in high_quality
 
     def test_infer_empty_prompt_returns_422(self, client: TestClient) -> None:
         resp = client.post("/infer", json={"prompt": ""})

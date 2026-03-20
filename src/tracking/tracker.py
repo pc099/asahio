@@ -167,12 +167,12 @@ class EventTracker:
         )
 
         return {
-            "total_cost": round(total_cost, 4),
-            "gpt4_equivalent_cost": round(gpt4_total, 4),
+            "total_cost": round(total_cost, 6),
+            "gpt4_equivalent_cost": round(gpt4_total, 6),
             "requests": requests,
             "avg_latency_ms": round(avg_latency, 1),
             "cache_hit_rate": round(cache_hit_rate, 4),
-            "cost_by_model": {k: round(v, 4) for k, v in cost_by_model.items()},
+            "cost_by_model": {k: round(v, 6) for k, v in cost_by_model.items()},
             "requests_by_model": requests_by_model,
             "estimated_savings_vs_gpt4": round(savings_pct, 1),
             "absolute_savings": round(savings, 4),

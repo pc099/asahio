@@ -1,37 +1,213 @@
-# Asahi LLM Model Profiles
+# ASAHIO LLM Model Profiles
 # Each entry defines pricing, latency, quality, and capability metadata.
 # The routing engine uses these to make cost-optimal decisions.
+# Pricing as of March 2026 — see docs/ASAHIO_Engineering_Changelog_March2026.md
 
 models:
+  # ── OpenAI ──────────────────────────────────────────────────────────────
+
   gpt-4o:
     provider: openai
     api_key_env: OPENAI_API_KEY
-    cost_per_1k_input_tokens: 0.010
-    cost_per_1k_output_tokens: 0.030
+    cost_per_1k_input_tokens: 0.0025
+    cost_per_1k_output_tokens: 0.010
     avg_latency_ms: 200
     quality_score: 4.6
     max_input_tokens: 128000
-    max_output_tokens: 4096
-    description: "Most powerful OpenAI model, highest quality"
+    max_output_tokens: 16384
+    description: "OpenAI flagship multimodal model"
 
-  claude-opus-4:
+  gpt-4o-mini:
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    cost_per_1k_input_tokens: 0.00015
+    cost_per_1k_output_tokens: 0.0006
+    avg_latency_ms: 120
+    quality_score: 4.0
+    max_input_tokens: 128000
+    max_output_tokens: 16384
+    description: "Small, fast, affordable OpenAI model"
+
+  o3:
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    cost_per_1k_input_tokens: 0.010
+    cost_per_1k_output_tokens: 0.040
+    avg_latency_ms: 800
+    quality_score: 4.8
+    max_input_tokens: 200000
+    max_output_tokens: 100000
+    description: "OpenAI reasoning model, highest capability"
+
+  # ── Anthropic ───────────────────────────────────────────────────────────
+
+  claude-opus-4-6:
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     cost_per_1k_input_tokens: 0.015
     cost_per_1k_output_tokens: 0.075
-    avg_latency_ms: 180
-    quality_score: 4.5
+    avg_latency_ms: 300
+    quality_score: 4.8
     max_input_tokens: 200000
-    max_output_tokens: 4096
-    description: "High quality Anthropic model, moderate cost"
+    max_output_tokens: 32000
+    description: "Anthropic flagship, highest quality"
 
-  claude-3-5-sonnet:
+  claude-sonnet-4-6:
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     cost_per_1k_input_tokens: 0.003
     cost_per_1k_output_tokens: 0.015
-    avg_latency_ms: 150
-    quality_score: 4.1
+    avg_latency_ms: 180
+    quality_score: 4.5
     max_input_tokens: 200000
-    max_output_tokens: 4096
-    description: "Fast, cheap, reasonable quality"
+    max_output_tokens: 64000
+    description: "Best balance of speed, quality, and cost"
+
+  claude-haiku-4-5:
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    cost_per_1k_input_tokens: 0.00025
+    cost_per_1k_output_tokens: 0.00125
+    avg_latency_ms: 100
+    quality_score: 3.8
+    max_input_tokens: 200000
+    max_output_tokens: 8192
+    description: "Fastest Anthropic model, very low cost"
+
+  # ── Google Gemini ───────────────────────────────────────────────────────
+
+  gemini-2.5-pro:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.00125
+    cost_per_1k_output_tokens: 0.010
+    avg_latency_ms: 400
+    quality_score: 4.7
+    max_input_tokens: 1000000
+    max_output_tokens: 65536
+    description: "Google flagship, 1M context window"
+
+  gemini-2.5-flash:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.00015
+    cost_per_1k_output_tokens: 0.0006
+    avg_latency_ms: 150
+    quality_score: 4.2
+    max_input_tokens: 1000000
+    max_output_tokens: 65536
+    description: "Fast Google model, great value"
+
+  gemini-2.0-flash:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.00010
+    cost_per_1k_output_tokens: 0.00040
+    avg_latency_ms: 120
+    quality_score: 4.0
+    max_input_tokens: 1000000
+    max_output_tokens: 8192
+    description: "Previous-gen fast model, very affordable"
+
+  gemini-2.0-flash-lite:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.000075
+    cost_per_1k_output_tokens: 0.00030
+    avg_latency_ms: 80
+    quality_score: 3.5
+    max_input_tokens: 1000000
+    max_output_tokens: 8192
+    description: "Lightest Google model, lowest cost"
+
+  gemini-1.5-pro:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.00125
+    cost_per_1k_output_tokens: 0.005
+    avg_latency_ms: 350
+    quality_score: 4.3
+    max_input_tokens: 2000000
+    max_output_tokens: 8192
+    description: "Legacy 2M context window model"
+
+  gemini-1.5-flash:
+    provider: google
+    api_key_env: GOOGLE_API_KEY
+    cost_per_1k_input_tokens: 0.000075
+    cost_per_1k_output_tokens: 0.00030
+    avg_latency_ms: 100
+    quality_score: 3.7
+    max_input_tokens: 1000000
+    max_output_tokens: 8192
+    description: "Legacy fast model"
+
+  # ── DeepSeek ────────────────────────────────────────────────────────────
+
+  deepseek-chat:
+    provider: deepseek
+    api_key_env: DEEPSEEK_API_KEY
+    cost_per_1k_input_tokens: 0.00007
+    cost_per_1k_output_tokens: 0.0011
+    avg_latency_ms: 250
+    quality_score: 4.0
+    max_input_tokens: 64000
+    max_output_tokens: 8192
+    description: "DeepSeek general chat, lowest cost tier"
+
+  deepseek-reasoner:
+    provider: deepseek
+    api_key_env: DEEPSEEK_API_KEY
+    cost_per_1k_input_tokens: 0.00055
+    cost_per_1k_output_tokens: 0.00219
+    avg_latency_ms: 600
+    quality_score: 4.4
+    max_input_tokens: 64000
+    max_output_tokens: 8192
+    description: "DeepSeek reasoning model, strong on math/code"
+
+  deepseek-coder:
+    provider: deepseek
+    api_key_env: DEEPSEEK_API_KEY
+    cost_per_1k_input_tokens: 0.00014
+    cost_per_1k_output_tokens: 0.00028
+    avg_latency_ms: 200
+    quality_score: 4.1
+    max_input_tokens: 128000
+    max_output_tokens: 8192
+    description: "DeepSeek code specialist"
+
+  # ── Mistral ─────────────────────────────────────────────────────────────
+
+  mistral-large-latest:
+    provider: mistral
+    api_key_env: MISTRAL_API_KEY
+    cost_per_1k_input_tokens: 0.002
+    cost_per_1k_output_tokens: 0.006
+    avg_latency_ms: 300
+    quality_score: 4.5
+    max_input_tokens: 128000
+    max_output_tokens: 8192
+    description: "Mistral flagship, strong multilingual"
+
+  mistral-small-latest:
+    provider: mistral
+    api_key_env: MISTRAL_API_KEY
+    cost_per_1k_input_tokens: 0.0001
+    cost_per_1k_output_tokens: 0.0003
+    avg_latency_ms: 120
+    quality_score: 3.8
+    max_input_tokens: 128000
+    max_output_tokens: 8192
+    description: "Small fast Mistral model"
+
+  codestral-latest:
+    provider: mistral
+    api_key_env: MISTRAL_API_KEY
+    cost_per_1k_input_tokens: 0.0003
+    cost_per_1k_output_tokens: 0.0009
+    avg_latency_ms: 150
+    quality_score: 4.2
+    max_input_tokens: 256000
+    max_output_tokens: 8192
+    description: "Mistral code specialist, best-value code model"

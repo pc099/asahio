@@ -141,6 +141,7 @@ async def run_inference(
     fingerprint_hallucination_rate: Optional[float] = None,
     agent_type: Optional[str] = None,
     threshold_overrides: Optional[dict] = None,
+    chain_config: Optional[dict] = None,
 ) -> GatewayResult:
     start_time = time.time()
     normalized_routing_mode = normalize_routing_mode(routing_mode)
@@ -278,6 +279,113 @@ async def run_inference(
                 return blocked_result
         except Exception:
             logger.debug("Intervention engine unavailable, proceeding without intervention")
+
+    # ── Chain execution (GUIDED mode with chain_config) ────────────────
+    if chain_config and normalized_routing_mode == "GUIDED":
+        try:
+            from src.providers import get_provider, EnvKeyResolver
+            from src.providers.base import InferenceRequest as ProviderRequest
+            from src.routing.guided_chain import (
+                ChainSlotConfig,
+                GuidedChainConfig,
+                GuidedChainExecutor,
+            )
+
+            # Build chain config from dict
+            slots = [
+                ChainSlotConfig(
+                    position=s["position"],
+                    model_id=s["model_id"],
+                    provider=s["provider"],
+                    fallback_triggers=chain_config.get("fallback_triggers", ["rate_limit", "server_error", "timeout"]),
+                    max_latency_ms=s.get("max_latency_ms"),
+                    max_cost_per_1k_tokens=s.get("max_cost_per_1k_tokens"),
+                )
+                for s in chain_config["slots"]
+            ]
+            guided_chain = GuidedChainConfig(
+                chain_id=chain_config["chain_id"],
+                name=chain_config["name"],
+                slots=slots,
+            )
+
+            # Resolve key resolver — prefer DB resolver if available
+            try:
+                from app.services.key_resolver import DBKeyResolver
+                from app.db.engine import async_session_factory
+                # DBKeyResolver is async — fall back to EnvKeyResolver in sync context
+                resolver = EnvKeyResolver()
+            except ImportError:
+                resolver = EnvKeyResolver()
+
+            executor = GuidedChainExecutor(
+                get_provider=get_provider,
+                resolve_key=resolver.resolve,
+            )
+
+            request = ProviderRequest(model="", prompt=prompt, max_tokens=1024)
+
+            chain_response, attempts = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: executor.execute(guided_chain, request, org_id),
+            )
+
+            elapsed = int((time.time() - start_time) * 1000)
+
+            # Resolve policy fields from intervention decision
+            if intervention_decision is not None:
+                policy_action = intervention_decision.action
+                policy_reason = intervention_decision.reason
+                i_level = intervention_decision.level.value
+            else:
+                policy_action = "log"
+                policy_reason = "Chain execution — no intervention"
+                i_level = 0
+
+            r_score = risk_breakdown.composite_score if risk_breakdown else None
+            r_factors = risk_breakdown.factors if risk_breakdown else {}
+
+            chain_result = GatewayResult(
+                response=chain_response.text,
+                model_used=chain_response.model,
+                model_requested=model_override,
+                provider=chain_response.provider,
+                routing_mode=normalized_routing_mode,
+                intervention_mode=norm_intervention_mode,
+                agent_id=agent_id,
+                agent_session_id=agent_session_id,
+                model_endpoint_id=model_endpoint_id,
+                input_tokens=chain_response.input_tokens,
+                output_tokens=chain_response.output_tokens,
+                cost_without_asahi=0.0,
+                cost_with_asahi=0.0,
+                savings_usd=0.0,
+                savings_pct=0.0,
+                cache_hit=False,
+                latency_ms=elapsed,
+                routing_reason=f"Chain '{guided_chain.name}' executed ({len(attempts)} attempt(s))",
+                routing_factors={
+                    "chain_id": guided_chain.chain_id,
+                    "attempts": [
+                        {
+                            "slot": a.slot_position,
+                            "provider": a.provider,
+                            "model": a.model,
+                            "success": a.success,
+                            "trigger": a.trigger,
+                        }
+                        for a in attempts
+                    ],
+                },
+                policy_action=policy_action,
+                policy_reason=policy_reason,
+                risk_score=r_score,
+                risk_factors=r_factors,
+                intervention_level=i_level,
+            )
+            return chain_result
+        except Exception as exc:
+            logger.warning("Chain execution failed, falling through to normal routing: %s", exc)
 
     # Run the routing engine to get model selection and factor breakdown
     from app.services.provider_health import get_all_provider_health

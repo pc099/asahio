@@ -150,7 +150,7 @@ class TestRecordBatchEvent:
         collector.record_batch_event(batch_size=5, savings_pct=15.0)
         # Verify via prometheus output
         prom = collector.get_prometheus_metrics()
-        assert "asahi_batch_size" in prom
+        assert "asahio_batch_size" in prom
 
 
 class TestRecordSavings:
@@ -166,7 +166,7 @@ class TestRecordSavings:
         collector.record_savings("caching", 0.75)
         collector.record_savings("routing", 0.50)
         prom = collector.get_prometheus_metrics()
-        assert "asahi_savings_dollars_total" in prom
+        assert "asahio_savings_dollars_total" in prom
 
 
 class TestPrometheusExposition:
@@ -192,31 +192,31 @@ class TestPrometheusExposition:
     def test_contains_help_and_type(self, collector: MetricsCollector) -> None:
         """Output should contain HELP and TYPE annotations."""
         prom = collector.get_prometheus_metrics()
-        assert "# HELP asahi_requests_total" in prom
-        assert "# TYPE asahi_requests_total counter" in prom
+        assert "# HELP asahio_requests_total" in prom
+        assert "# TYPE asahio_requests_total counter" in prom
 
     def test_contains_counter_values(self, collector: MetricsCollector) -> None:
         """Output should contain counter metric lines."""
         prom = collector.get_prometheus_metrics()
-        assert "asahi_requests_total{" in prom
-        assert "asahi_cost_dollars_total{" in prom
+        assert "asahio_requests_total{" in prom
+        assert "asahio_cost_dollars_total{" in prom
 
     def test_contains_histogram_buckets(self, collector: MetricsCollector) -> None:
         """Output should contain histogram bucket lines."""
         prom = collector.get_prometheus_metrics()
-        assert "asahi_latency_ms_bucket{" in prom
-        assert "asahi_latency_ms_sum" in prom
-        assert "asahi_latency_ms_count" in prom
+        assert "asahio_latency_ms_bucket{" in prom
+        assert "asahio_latency_ms_sum" in prom
+        assert "asahio_latency_ms_count" in prom
 
     def test_contains_quality_gauge(self, collector: MetricsCollector) -> None:
         """Output should contain quality score gauge."""
         prom = collector.get_prometheus_metrics()
-        assert 'asahi_quality_score{model="gpt-4-turbo"}' in prom
+        assert 'asahio_quality_score{model="gpt-4-turbo"}' in prom
 
     def test_contains_error_counter(self, collector: MetricsCollector) -> None:
         """Output should contain error counter."""
         prom = collector.get_prometheus_metrics()
-        assert "asahi_errors_total{" in prom
+        assert "asahio_errors_total{" in prom
 
     def test_empty_collector_returns_valid_format(self) -> None:
         """Empty collector should return valid Prometheus format."""

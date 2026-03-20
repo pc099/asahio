@@ -161,6 +161,7 @@ class InferenceOptimizer:
         request_queue: Optional[Any] = None,
         batch_scheduler: Optional[Any] = None,
         governance_engine: Optional[Any] = None,
+        key_resolver: Optional[Any] = None,
     ) -> None:
         self._registry = registry or ModelRegistry()
         self._cache = cache or Cache()
@@ -186,6 +187,7 @@ class InferenceOptimizer:
         self._request_queue = request_queue
         self._batch_scheduler = batch_scheduler
         self._governance_engine = governance_engine
+        self._key_resolver = key_resolver
 
         # Feature flags (auto-detect from component availability)
         self._enable_tier2 = (
@@ -866,14 +868,7 @@ class InferenceOptimizer:
         last_error: Optional[Exception] = None
         for attempt in range(3):
             try:
-                if profile.provider == "openai":
-                    return self._call_openai(model_name, prompt)
-                elif profile.provider == "anthropic":
-                    return self._call_anthropic(model_name, prompt)
-                else:
-                    raise ProviderError(
-                        f"Unknown provider: {profile.provider}"
-                    )
+                return self._call_provider(profile, model_name, prompt)
             except ProviderError:
                 raise
             except Exception as exc:
@@ -894,6 +889,37 @@ class InferenceOptimizer:
         raise ProviderError(
             f"Failed after 3 retries for {model_name}: {last_error}"
         )
+
+    def _call_provider(
+        self, profile: ModelProfile, model_name: str, prompt: str
+    ) -> Tuple[str, int, int, int]:
+        """Dispatch to the appropriate provider via ProviderAdapter.
+
+        Falls back to legacy _call_openai/_call_anthropic if the provider
+        adapter layer is not available or the key resolver is not set.
+        """
+        try:
+            from src.providers import get_provider_for_model, EnvKeyResolver
+            from src.providers.base import InferenceRequest as ProviderRequest
+
+            provider = get_provider_for_model(model_name)
+            resolver = self._key_resolver or EnvKeyResolver()
+            api_key = resolver.resolve(provider.provider_name)
+            req = ProviderRequest(model=model_name, prompt=prompt, max_tokens=1024)
+            resp = provider.call(req, api_key)
+            return resp.text, resp.input_tokens, resp.output_tokens, resp.latency_ms
+        except ImportError:
+            pass  # Fall through to legacy path
+        except ValueError:
+            pass  # Unknown provider — fall through to legacy path
+
+        # Legacy fallback for openai/anthropic SDK-based calls
+        if profile.provider == "openai":
+            return self._call_openai(model_name, prompt)
+        elif profile.provider == "anthropic":
+            return self._call_anthropic(model_name, prompt)
+        else:
+            raise ProviderError(f"Unknown provider: {profile.provider}")
 
     def _call_openai(
         self, model_name: str, prompt: str

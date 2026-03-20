@@ -16,7 +16,9 @@ from app.schemas.aba import (
     AnomalyItem,
     ColdStartStatus,
     FingerprintResponse,
+    HallucinationTag,
     ObservationCreate,
+    OrgOverviewResponse,
     RiskPriorResponse,
     StructuralRecordResponse,
 )
@@ -95,6 +97,96 @@ async def list_fingerprints(
         "data": [FingerprintResponse.model_validate(fp) for fp in fingerprints],
         "pagination": {"total": total, "limit": limit, "offset": offset},
     }
+
+
+# ── GET /aba/org/overview ──────────────────────────────────────────────
+
+
+@router.get("/aba/org/overview", response_model=OrgOverviewResponse)
+async def get_org_overview(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregate ABA overview for the entire organisation."""
+    org_id = await _get_org_id(request)
+
+    # Fetch all fingerprints
+    result = await db.execute(
+        select(AgentFingerprint).where(AgentFingerprint.organisation_id == org_id)
+    )
+    fingerprints = result.scalars().all()
+
+    total_agents = len(fingerprints)
+    total_observations = sum(fp.total_observations for fp in fingerprints)
+    avg_confidence = (
+        sum(fp.baseline_confidence for fp in fingerprints) / total_agents
+        if total_agents > 0
+        else 0.0
+    )
+    avg_hallucination = (
+        sum(fp.hallucination_rate for fp in fingerprints) / total_agents
+        if total_agents > 0
+        else 0.0
+    )
+    avg_cache_hit = (
+        sum(fp.cache_hit_rate for fp in fingerprints) / total_agents
+        if total_agents > 0
+        else 0.0
+    )
+
+    from app.services.model_c_pool import COLD_START_THRESHOLD
+
+    cold_start_agents = sum(
+        1 for fp in fingerprints if fp.total_observations < COLD_START_THRESHOLD
+    )
+
+    # Hallucination distribution buckets
+    dist: dict[str, int] = {"clean": 0, "low": 0, "medium": 0, "high": 0}
+    for fp in fingerprints:
+        rate = fp.hallucination_rate
+        if rate <= 0:
+            dist["clean"] += 1
+        elif rate < 0.05:
+            dist["low"] += 1
+        elif rate <= 0.15:
+            dist["medium"] += 1
+        else:
+            dist["high"] += 1
+
+    # Detect anomalies (reuse detector)
+    from app.services.aba_anomaly_detector import ABAAnomalyDetector
+
+    detector = ABAAnomalyDetector()
+    now = datetime.now(timezone.utc)
+    all_anomalies: list[AnomalyItem] = []
+    for fp in fingerprints:
+        for a in detector.detect_anomalies(fp):
+            all_anomalies.append(
+                AnomalyItem(
+                    agent_id=fp.agent_id,
+                    anomaly_type=a.anomaly_type,
+                    severity=a.severity,
+                    current_value=a.current_value,
+                    baseline_value=a.baseline_value,
+                    deviation_pct=a.deviation_pct,
+                    detected_at=now,
+                )
+            )
+    # Sort by severity (high first) and take top 5
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    all_anomalies.sort(key=lambda a: severity_order.get(a.severity, 3))
+
+    return OrgOverviewResponse(
+        total_agents=total_agents,
+        total_observations=total_observations,
+        avg_baseline_confidence=round(avg_confidence, 4),
+        avg_hallucination_rate=round(avg_hallucination, 4),
+        avg_cache_hit_rate=round(avg_cache_hit, 4),
+        cold_start_agents=cold_start_agents,
+        anomaly_count=len(all_anomalies),
+        top_anomalies=all_anomalies[:5],
+        hallucination_distribution=dist,
+    )
 
 
 # ── GET /aba/structural-records ─────────────────────────────────────────
@@ -302,3 +394,68 @@ async def create_observation(
     asyncio.create_task(write_aba_observation(payload))
 
     return {"status": "accepted", "agent_id": str(body.agent_id)}
+
+
+# ── POST /aba/calls/{call_id}/tag ─────────────────────────────────────
+
+
+@router.post("/aba/calls/{call_id}/tag")
+async def tag_hallucination(
+    call_id: str,
+    body: HallucinationTag,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tag a structural record as hallucinated (or not).
+
+    Updates the record's hallucination_detected flag and recalculates
+    the agent fingerprint's hallucination_rate from all its records.
+    """
+    org_id = await _get_org_id(request)
+    try:
+        call_uuid = uuid.UUID(call_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid call_id format")
+
+    # Find the structural record by call_trace_id
+    result = await db.execute(
+        select(StructuralRecord).where(
+            StructuralRecord.call_trace_id == call_uuid,
+            StructuralRecord.organisation_id == org_id,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail="Structural record not found")
+
+    # Update the hallucination flag
+    record.hallucination_detected = body.hallucination_detected
+    await db.flush()
+
+    # Recalculate the agent fingerprint hallucination_rate
+    fp_result = await db.execute(
+        select(AgentFingerprint).where(
+            AgentFingerprint.agent_id == record.agent_id,
+            AgentFingerprint.organisation_id == org_id,
+        )
+    )
+    fingerprint = fp_result.scalar_one_or_none()
+
+    if fingerprint and fingerprint.total_observations > 0:
+        count_result = await db.execute(
+            select(func.count()).select_from(StructuralRecord).where(
+                StructuralRecord.agent_id == record.agent_id,
+                StructuralRecord.organisation_id == org_id,
+                StructuralRecord.hallucination_detected.is_(True),
+            )
+        )
+        hallucination_count = count_result.scalar() or 0
+        fingerprint.hallucination_rate = hallucination_count / fingerprint.total_observations
+
+    await db.commit()
+
+    return {
+        "call_trace_id": str(call_uuid),
+        "hallucination_detected": body.hallucination_detected,
+        "agent_id": str(record.agent_id),
+    }

@@ -269,6 +269,7 @@ export interface AgentItem {
   model_endpoint_id: string | null;
   is_active: boolean;
   metadata: Record<string, unknown>;
+  risk_threshold_overrides?: Record<string, number> | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -672,6 +673,28 @@ export async function createAgent(
   );
 }
 
+export async function updateAgent(
+  agentId: string,
+  data: {
+    name?: string;
+    description?: string;
+    routing_mode?: string;
+    intervention_mode?: string;
+    is_active?: boolean;
+    metadata?: Record<string, unknown>;
+    risk_threshold_overrides?: Record<string, number> | null;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<AgentItem>(
+    `/agents/${agentId}`,
+    { method: "PATCH", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
 export async function listModelEndpoints(token?: string, orgSlug?: string) {
   return fetchApi<{ data: ModelEndpointItem[] }>("/models", {}, token, orgHeaders(orgSlug));
 }
@@ -832,6 +855,22 @@ export async function getABAColdStartStatus(agentId: string, token?: string, org
   return fetchApi<ABAColdStartStatus>(`/aba/cold-start-status/${agentId}`, {}, token, orgHeaders(orgSlug));
 }
 
+export interface ABAOrgOverview {
+  total_agents: number;
+  total_observations: number;
+  avg_baseline_confidence: number;
+  avg_hallucination_rate: number;
+  avg_cache_hit_rate: number;
+  cold_start_agents: number;
+  anomaly_count: number;
+  top_anomalies: ABAAnomaly[];
+  hallucination_distribution: Record<string, number>;
+}
+
+export async function getABAOrgOverview(token?: string, orgSlug?: string) {
+  return fetchApi<ABAOrgOverview>("/aba/org/overview", {}, token, orgHeaders(orgSlug));
+}
+
 // — Interventions ————————————————————————————————————
 
 export interface InterventionLogEntry {
@@ -950,6 +989,92 @@ export async function getModeHistory(
 }
 
 // ---------------------------------------------------------------------------
+// Routing Constraints
+// ---------------------------------------------------------------------------
+
+export interface RoutingConstraintItem {
+  id: string;
+  organisation_id: string;
+  agent_id: string | null;
+  rule_type: string;
+  rule_config: Record<string, unknown>;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listConstraints(
+  params: { agent_id?: string; active_only?: boolean } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.active_only !== undefined) searchParams.set("active_only", String(params.active_only));
+  return fetchApi<{ data: RoutingConstraintItem[] }>(
+    `/routing/constraints?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function createConstraint(
+  data: {
+    rule_type: string;
+    rule_config: Record<string, unknown>;
+    agent_id?: string;
+    priority?: number;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ data: RoutingConstraintItem }>(
+    "/routing/constraints",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function updateConstraint(
+  constraintId: string,
+  data: { rule_config?: Record<string, unknown>; priority?: number; is_active?: boolean },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ data: RoutingConstraintItem }>(
+    `/routing/constraints/${constraintId}`,
+    { method: "PUT", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function deleteConstraint(constraintId: string, token?: string, orgSlug?: string) {
+  return fetchApi<{ data: RoutingConstraintItem }>(
+    `/routing/constraints/${constraintId}`,
+    { method: "DELETE" },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function dryRunRule(
+  data: { rule_type: string; rule_config: Record<string, unknown>; sample_prompt?: string },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ selected_model: string; provider: string; reason: string; validation_errors?: string[] }>(
+    "/routing/rules/dry-run",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Provider Health
 // ---------------------------------------------------------------------------
 
@@ -964,4 +1089,237 @@ export async function getProviderHealth(token?: string) {
   return fetchApi<{ providers: ProviderHealth[] }>("/health/providers", {}, token);
 }
 
+// ---------------------------------------------------------------------------
+// Traces & Sessions
+// ---------------------------------------------------------------------------
+
+export interface TraceItem {
+  id: string;
+  agent_id: string | null;
+  agent_session_id: string | null;
+  request_id: string | null;
+  model_requested: string | null;
+  model_used: string;
+  provider: string | null;
+  routing_mode: string | null;
+  intervention_mode: string | null;
+  policy_action: string | null;
+  policy_reason: string | null;
+  cache_hit: boolean;
+  cache_tier: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  latency_ms: number | null;
+  risk_score: number | null;
+  intervention_level: number | null;
+  risk_factors: Record<string, number> | null;
+  trace_metadata: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export interface SessionItem {
+  id: string;
+  agent_id: string;
+  external_session_id: string | null;
+  started_at: string | null;
+  last_seen_at: string | null;
+  trace_count: number;
+}
+
+export interface SessionGraphStep {
+  step_number: number;
+  call_trace_id: string;
+  model_used: string;
+  cache_hit: boolean;
+  latency_ms: number | null;
+  created_at: string | null;
+  depends_on: number[];
+}
+
+export interface SessionGraphResponse {
+  session_id: string;
+  step_count: number;
+  steps: SessionGraphStep[];
+}
+
+export async function listTraces(
+  params: { agent_id?: string; session_id?: string; cache_hit?: boolean; limit?: number; offset?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.session_id) searchParams.set("session_id", params.session_id);
+  if (params.cache_hit !== undefined) searchParams.set("cache_hit", String(params.cache_hit));
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+  return fetchApi<{ data: TraceItem[]; total: number; limit: number; offset: number }>(
+    `/traces?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function listSessions(
+  params: { agent_id?: string; limit?: number; offset?: number } = {},
+  token?: string,
+  orgSlug?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+  return fetchApi<{ data: SessionItem[]; total: number; limit: number; offset: number }>(
+    `/sessions?${searchParams}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getSessionGraph(sessionId: string, token?: string, orgSlug?: string) {
+  return fetchApi<SessionGraphResponse>(`/sessions/${sessionId}/graph`, {}, token, orgHeaders(orgSlug));
+}
+
+// ---------------------------------------------------------------------------
+// Cache Management
+// ---------------------------------------------------------------------------
+
+export interface CacheStats {
+  metrics: {
+    exact_hits: number;
+    semantic_hits: number;
+    misses: number;
+    promotions: number;
+    hit_rate: number;
+  };
+}
+
+export async function getCacheStats(token?: string, orgSlug?: string) {
+  return fetchApi<CacheStats>("/cache/stats", {}, token, orgHeaders(orgSlug));
+}
+
+// ---------------------------------------------------------------------------
+// Providers — BYOK Keys, Ollama, Guided Chains
+// ---------------------------------------------------------------------------
+
+export interface ProviderKeyItem {
+  id: string;
+  provider: string;
+  key_hint: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string | null;
+}
+
+export interface OllamaConfigItem {
+  id: string;
+  name: string | null;
+  base_url: string;
+  is_verified: boolean;
+  available_models: string[];
+  last_verified_at: string | null;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+export interface ChainSlotItem {
+  id: string;
+  provider: string;
+  model: string;
+  priority: number;
+  max_latency_ms: number | null;
+  max_cost_per_1k_tokens: number | null;
+}
+
+export interface ChainItem {
+  id: string;
+  name: string;
+  fallback_triggers: string[];
+  is_default: boolean;
+  is_active: boolean;
+  slots: ChainSlotItem[];
+  created_at: string | null;
+}
+
+export interface ChainTestResult {
+  chain_id: string;
+  ready: boolean;
+  slots: Array<{
+    position: number;
+    provider: string;
+    model: string;
+    key_available: boolean;
+    error: string | null;
+  }>;
+}
+
+export async function listChains(token?: string, orgSlug?: string) {
+  return fetchApi<{ data: ChainItem[] }>("/providers/chains", {}, token, orgHeaders(orgSlug));
+}
+
+export async function createChain(
+  data: {
+    name: string;
+    fallback_triggers?: string[];
+    is_default?: boolean;
+    slots: Array<{
+      provider: string;
+      model: string;
+      priority: number;
+      max_latency_ms?: number | null;
+      max_cost_per_1k_tokens?: number | null;
+    }>;
+  },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<ChainItem>(
+    "/providers/chains",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function deleteChain(chainId: string, token?: string, orgSlug?: string) {
+  return fetchApi<void>(
+    `/providers/chains/${chainId}`,
+    { method: "DELETE" },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function testChain(chainId: string, token?: string, orgSlug?: string) {
+  return fetchApi<ChainTestResult>(
+    `/providers/chains/${chainId}/test`,
+    { method: "POST" },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function listOllamaConfigs(token?: string, orgSlug?: string) {
+  return fetchApi<{ data: OllamaConfigItem[] }>("/providers/ollama", {}, token, orgHeaders(orgSlug));
+}
+
+// ---------------------------------------------------------------------------
+// Hallucination Tagging
+// ---------------------------------------------------------------------------
+
+export async function tagHallucination(
+  callId: string,
+  data: { hallucination_detected: boolean; notes?: string },
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<{ call_trace_id: string; hallucination_detected: boolean; agent_id: string }>(
+    `/aba/calls/${callId}/tag`,
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+    orgHeaders(orgSlug)
+  );
+}
 

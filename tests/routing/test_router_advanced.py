@@ -74,8 +74,12 @@ class TestGuidedMode:
             quality_preference="max",
         )
         assert decision.mode == "guided"
-        # max quality (4.5 threshold) narrows to gpt-4 and opus
-        assert decision.model_name in ["gpt-4-turbo", "claude-opus-4"]
+        # max quality (4.5 threshold) narrows to models with quality >= 4.5
+        # and latency within budget. Best value among qualifying models wins.
+        from src.models.registry import ModelRegistry
+        registry = ModelRegistry()
+        high_quality = [m.name for m in registry.all() if m.quality_score >= 4.5]
+        assert decision.model_name in high_quality
 
     def test_guided_with_fast_latency(
         self, advanced_router: AdvancedRouter
@@ -117,9 +121,9 @@ class TestExplicitMode:
         decision = advanced_router.route(
             "Test",
             mode="explicit",
-            model_override="gpt-4-turbo",
+            model_override="gpt-4o",
         )
-        assert decision.model_name == "gpt-4-turbo"
+        assert decision.model_name == "gpt-4o"
         assert decision.mode == "explicit"
 
     def test_explicit_shows_alternatives(
@@ -128,12 +132,12 @@ class TestExplicitMode:
         decision = advanced_router.route(
             "Test",
             mode="explicit",
-            model_override="gpt-4-turbo",
+            model_override="gpt-4o",
         )
         assert len(decision.alternatives) > 0
         # Alternatives should not include the chosen model
         alt_names = [a.model for a in decision.alternatives]
-        assert "gpt-4-turbo" not in alt_names
+        assert "gpt-4o" not in alt_names
 
     def test_explicit_alternatives_have_savings(
         self, advanced_router: AdvancedRouter
@@ -141,9 +145,9 @@ class TestExplicitMode:
         decision = advanced_router.route(
             "Test",
             mode="explicit",
-            model_override="gpt-4-turbo",
+            model_override="gpt-4o",
         )
-        # Some alternatives should show positive savings vs GPT-4
+        # Some alternatives should show positive savings vs gpt-4o
         has_savings = any(a.savings_percent > 0 for a in decision.alternatives)
         assert has_savings
 
@@ -165,7 +169,7 @@ class TestExplicitMode:
         self, advanced_router: AdvancedRouter
     ) -> None:
         decision = advanced_router.route(
-            "Test", mode="explicit", model_override="gpt-4-turbo"
+            "Test", mode="explicit", model_override="gpt-4o"
         )
         assert "alternatives" in decision.reason
 

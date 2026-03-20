@@ -214,6 +214,7 @@ class RedisCache:
         response: str,
         model_used: str,
         ttl: int = SEMANTIC_CACHE_TTL,
+        dep_fingerprint: Optional[str] = None,
     ) -> None:
         """Store a response with its embedding vector in Pinecone."""
         index = self._get_pinecone_index()
@@ -225,18 +226,18 @@ class RedisCache:
             query_hash = hashlib.md5(query.encode()).hexdigest()
             vector_id = f"{org_id}:{query_hash}"
 
+            metadata: dict = {
+                "org_id": org_id,
+                "model": model_used,
+                "query": query,
+                "response": response,
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if dep_fingerprint:
+                metadata["dep_fingerprint"] = dep_fingerprint
+
             index.upsert(
-                vectors=[(
-                    vector_id,
-                    embedding,
-                    {
-                        "org_id": org_id,
-                        "model": model_used,
-                        "query": query,
-                        "response": response,
-                        "cached_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )],
+                vectors=[(vector_id, embedding, metadata)],
                 namespace=org_id,
             )
         except Exception:
@@ -291,10 +292,13 @@ class RedisCache:
         response: str,
         model_used: str,
         dependency_level: Optional[str] = None,
+        dep_fingerprint: Optional[str] = None,
     ) -> None:
         """Store in both exact and semantic caches."""
         await self.exact_set(org_id, query, response, model_used)
-        await self.semantic_set(org_id, query, response, model_used)
+        await self.semantic_set(
+            org_id, query, response, model_used, dep_fingerprint=dep_fingerprint,
+        )
 
     async def warm(
         self,
@@ -333,6 +337,7 @@ class RedisCache:
         model: Optional[str] = None,
         session_step: Optional[int] = None,
         coherence_validator=None,
+        dep_fingerprint: Optional[str] = None,
     ) -> Optional[CacheHit]:
         """Context-aware cache lookup.
 
@@ -348,10 +353,13 @@ class RedisCache:
             logger.debug("Cache skip: CRITICAL dependency for org %s", org_id)
             return None
 
-        # Build dependency fingerprint for PARTIAL/DEPENDENT cache key isolation
+        # Build dependency suffix for PARTIAL/DEPENDENT cache key isolation
         dep_suffix = ""
         if dependency_level in (DependencyLevel.PARTIAL, DependencyLevel.DEPENDENT):
-            dep_suffix = f":dep:{dependency_level}"
+            if dep_fingerprint:
+                dep_suffix = f":dep:{dep_fingerprint}"
+            else:
+                dep_suffix = f":dep:{dependency_level}"
             if session_step is not None:
                 dep_suffix += f":step:{session_step}"
 

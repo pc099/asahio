@@ -139,6 +139,10 @@ class Organisation(Base):
         Numeric(12, 4), nullable=True
     )
 
+    routing_weight_overrides: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
+    ip_allowlist: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -565,6 +569,8 @@ class CallTrace(Base):
     trace_metadata: Mapped[Optional[dict]] = mapped_column("trace_metadata", JSONB, default=dict)
     risk_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
     intervention_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    hallucination_tag: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    hallucination_tag_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -902,3 +908,142 @@ class ModeTransitionLog(Base):
 
     organisation: Mapped["Organisation"] = relationship("Organisation")
     agent: Mapped["Agent"] = relationship("Agent")
+
+
+# ── Provider Sprint Tables ──────────────────────────────────────────────
+
+
+class ProviderKey(Base):
+    """BYOK (Bring Your Own Key) — encrypted API key per provider per org."""
+
+    __tablename__ = "provider_keys"
+    __table_args__ = (
+        UniqueConstraint("organisation_id", "provider", name="uq_provider_key_org_provider"),
+        Index("ix_provider_keys_org_id", "organisation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hint: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+
+
+class GuidedChain(Base):
+    """Customer-defined fallback chain for GUIDED routing mode."""
+
+    __tablename__ = "guided_chains"
+    __table_args__ = (
+        Index("ix_guided_chains_org_id", "organisation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    fallback_triggers: Mapped[list] = mapped_column(
+        JSONB, default=lambda: ["rate_limit", "server_error", "timeout"], nullable=False
+    )
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")
+    slots: Mapped[list["ChainSlot"]] = relationship(
+        "ChainSlot", back_populates="chain", cascade="all, delete-orphan",
+        order_by="ChainSlot.priority",
+    )
+
+
+class ChainSlot(Base):
+    """One slot (primary or fallback) in a guided chain."""
+
+    __tablename__ = "chain_slots"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "priority", name="uq_chain_slot_position"),
+        Index("ix_chain_slots_chain_id", "chain_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    chain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("guided_chains.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_cost_per_1k_tokens: Mapped[Optional[float]] = mapped_column(
+        Numeric(8, 6), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    chain: Mapped["GuidedChain"] = relationship("GuidedChain", back_populates="slots")
+
+
+class OllamaConfig(Base):
+    """Customer's self-hosted Ollama instance configuration."""
+
+    __tablename__ = "ollama_configs"
+    __table_args__ = (
+        UniqueConstraint("organisation_id", "base_url", name="uq_ollama_config_org_url"),
+        Index("ix_ollama_configs_org_id", "organisation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organisation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    base_url: Mapped[str] = mapped_column(Text, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    available_models: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    last_verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organisation: Mapped["Organisation"] = relationship("Organisation")

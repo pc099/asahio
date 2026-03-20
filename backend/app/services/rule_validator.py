@@ -20,7 +20,7 @@ VALID_RULE_TYPES = frozenset({
     "provider_restriction",
 })
 
-KNOWN_PROVIDERS = frozenset({"openai", "anthropic"})
+KNOWN_PROVIDERS = frozenset({"openai", "anthropic", "google", "deepseek", "mistral", "ollama"})
 
 
 def validate_rule(

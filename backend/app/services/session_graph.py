@@ -1,14 +1,16 @@
 """Session graph store — tracks step dependencies within agent sessions.
 
-Maintains an in-memory directed graph of session steps. Each step records
-which prior steps it depends on and references the CallTrace that produced it.
+Maintains a directed graph of session steps. Each step records which prior
+steps it depends on and references the CallTrace that produced it.
 
-In production, this will be backed by Redis hashes with TTL.
+When a Redis client is provided, the store uses Redis HSET/HGET for durable
+distributed access. Otherwise it falls back to an in-memory dict.
 """
 
+import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -46,16 +48,74 @@ class SessionGraph:
         return max(self.steps.keys()) if self.steps else None
 
 
-class SessionGraphStore:
-    """In-memory session graph store.
+def _redis_key(env: str, org_id: str, session_id: str) -> str:
+    """Build the Redis key for a session graph hash."""
+    return f"{env}:{org_id}:session:graph:{session_id}"
 
-    Thread-safe for single-process use. In production, replace with
-    Redis HSET/HGET for distributed access.
+
+class SessionGraphStore:
+    """Session graph store with optional Redis backend.
+
+    When *redis* is provided, data is persisted to Redis HSET hashes with
+    TTL extended on every write. When Redis is unavailable or not provided,
+    the store falls back to an in-memory dict so callers degrade gracefully.
     """
 
-    def __init__(self, ttl_seconds: int = 3600) -> None:
+    def __init__(
+        self,
+        ttl_seconds: int = 3600,
+        redis=None,
+        org_id: str = "",
+        env: str = "prod",
+    ) -> None:
         self._graphs: dict[str, SessionGraph] = {}
         self._ttl_seconds = ttl_seconds
+        self._redis = redis
+        self._org_id = org_id
+        self._env = env
+
+    # ---- Redis helpers -------------------------------------------------
+
+    async def _redis_save_step(self, session_id: str, node: StepNode) -> None:
+        """Persist a step to Redis HSET. Non-fatal on failure."""
+        if not self._redis:
+            return
+        try:
+            key = _redis_key(self._env, self._org_id, session_id)
+            await self._redis.hset(key, str(node.step_number), json.dumps(asdict(node)))
+            await self._redis.expire(key, self._ttl_seconds)
+        except Exception:
+            logger.debug("Redis session graph save failed for %s — using memory", session_id)
+
+    async def _redis_load_graph(self, session_id: str) -> Optional[SessionGraph]:
+        """Try to load a full session graph from Redis."""
+        if not self._redis:
+            return None
+        try:
+            key = _redis_key(self._env, self._org_id, session_id)
+            data = await self._redis.hgetall(key)
+            if not data:
+                return None
+            graph = SessionGraph(session_id=session_id)
+            for _step_num, raw in data.items():
+                d = json.loads(raw)
+                node = StepNode(
+                    step_number=d["step_number"],
+                    call_trace_id=d.get("call_trace_id"),
+                    depends_on=d.get("depends_on", []),
+                    timestamp=d.get("timestamp", ""),
+                    metadata=d.get("metadata", {}),
+                )
+                graph.steps[node.step_number] = node
+            graph.last_accessed_at = time.time()
+            # Refresh TTL on access
+            await self._redis.expire(key, self._ttl_seconds)
+            return graph
+        except Exception:
+            logger.debug("Redis session graph load failed for %s — using memory", session_id)
+            return None
+
+    # ---- Public API (sync + async-safe) --------------------------------
 
     def add_step(
         self,
@@ -65,20 +125,9 @@ class SessionGraphStore:
         depends_on: Optional[list[int]] = None,
         metadata: Optional[dict] = None,
     ) -> StepNode:
-        """Record a new step in the session graph.
+        """Record a new step in the session graph (in-memory).
 
-        Args:
-            session_id: The session identifier.
-            step_number: The step number (must be positive).
-            call_trace_id: ID of the CallTrace for this step.
-            depends_on: List of step numbers this step depends on.
-            metadata: Additional metadata for this step.
-
-        Returns:
-            The created StepNode.
-
-        Raises:
-            ValueError: If step_number is not positive or depends_on references unknown steps.
+        Callers should also call ``save_step_async`` to persist to Redis.
         """
         if step_number < 1:
             raise ValueError(f"Step number must be positive, got {step_number}")
@@ -86,7 +135,6 @@ class SessionGraphStore:
         graph = self._graphs.setdefault(session_id, SessionGraph(session_id=session_id))
         graph.last_accessed_at = time.time()
 
-        # Validate dependencies exist
         deps = depends_on or []
         for dep in deps:
             if dep not in graph.steps and dep != step_number:
@@ -102,12 +150,12 @@ class SessionGraphStore:
             metadata=metadata or {},
         )
         graph.steps[step_number] = node
-
-        logger.debug(
-            "Added step %d to session %s (depends_on=%s)",
-            step_number, session_id, deps,
-        )
+        logger.debug("Added step %d to session %s (depends_on=%s)", step_number, session_id, deps)
         return node
+
+    async def save_step_async(self, session_id: str, node: StepNode) -> None:
+        """Persist a step to Redis (fire-and-forget safe)."""
+        await self._redis_save_step(session_id, node)
 
     def _get_live_graph(self, session_id: str) -> Optional[SessionGraph]:
         """Return the graph if it exists and is not expired, else None."""
@@ -119,6 +167,17 @@ class SessionGraphStore:
             logger.debug("Session %s expired (TTL=%ds)", session_id, self._ttl_seconds)
             return None
         graph.last_accessed_at = time.time()
+        return graph
+
+    async def get_session_graph_async(self, session_id: str) -> Optional[SessionGraph]:
+        """Get the full session graph, checking Redis if not in memory."""
+        graph = self._get_live_graph(session_id)
+        if graph:
+            return graph
+        # Attempt Redis hydration
+        graph = await self._redis_load_graph(session_id)
+        if graph:
+            self._graphs[session_id] = graph
         return graph
 
     def get_step(self, session_id: str, step_number: int) -> Optional[StepNode]:
@@ -161,7 +220,7 @@ class SessionGraphStore:
                 self._collect_deps(graph, dep_node.depends_on, visited, result)
 
     def get_session_graph(self, session_id: str) -> Optional[SessionGraph]:
-        """Get the full session graph."""
+        """Get the full session graph (in-memory only, sync)."""
         return self._get_live_graph(session_id)
 
     def cleanup_expired(self) -> int:

@@ -35,6 +35,9 @@ _health_registry: dict[str, ProviderStatus] = {}
 _PROVIDERS = {
     "openai": {"env_key": "OPENAI_API_KEY", "base_url": "https://api.openai.com"},
     "anthropic": {"env_key": "ANTHROPIC_API_KEY", "base_url": "https://api.anthropic.com"},
+    "google": {"env_key": "GOOGLE_API_KEY", "base_url": "https://generativelanguage.googleapis.com"},
+    "deepseek": {"env_key": "DEEPSEEK_API_KEY", "base_url": "https://api.deepseek.com"},
+    "mistral": {"env_key": "MISTRAL_API_KEY", "base_url": "https://api.mistral.ai"},
 }
 
 

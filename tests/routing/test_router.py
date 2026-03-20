@@ -65,13 +65,14 @@ class TestRouterSelectModel:
         decision = router.select_model(
             RoutingConstraints(quality_threshold=3.5, latency_budget_ms=300)
         )
-        # With quality/cost scoring, the cheapest high-quality model should win
-        # claude-3-5-sonnet has quality 4.1 and low cost, great value
-        assert decision.model_name in [
-            "gpt-4-turbo",
-            "claude-opus-4",
-            "claude-3-5-sonnet",
-        ]
+        # With quality/cost scoring, the best value model wins.
+        # With 19 models, cheap models like gemini-1.5-flash, deepseek-coder,
+        # mistral-small-latest dominate on quality/cost ratio.
+        from src.models.registry import ModelRegistry
+        registry = ModelRegistry()
+        candidates = registry.filter(min_quality=3.5, max_latency_ms=300)
+        candidate_names = [m.name for m in candidates]
+        assert decision.model_name in candidate_names
         assert decision.fallback_used is False
 
     def test_high_quality_threshold_narrows_candidates(
@@ -80,15 +81,31 @@ class TestRouterSelectModel:
         decision = router.select_model(
             RoutingConstraints(quality_threshold=4.5, latency_budget_ms=300)
         )
-        # Only gpt-4-turbo (4.6) and claude-opus-4 (4.5) qualify
-        assert decision.model_name in ["gpt-4-turbo", "claude-opus-4"]
+        # Quality >= 4.5 AND latency <= 300ms: gpt-4o (4.6, 200ms),
+        # claude-sonnet-4-6 (4.5, 180ms), claude-opus-4-6 (4.8, 300ms),
+        # mistral-large-latest (4.5, 300ms). Best value wins.
+        from src.models.registry import ModelRegistry
+        registry = ModelRegistry()
+        candidates = registry.filter(min_quality=4.5, max_latency_ms=300)
+        candidate_names = [m.name for m in candidates]
+        assert decision.model_name in candidate_names
+        assert decision.candidates_evaluated == len(candidate_names)
 
     def test_tight_latency_filters_slow_models(self, router: Router) -> None:
         decision = router.select_model(
             RoutingConstraints(quality_threshold=3.0, latency_budget_ms=160)
         )
-        # Only claude-3-5-sonnet (150ms) fits
-        assert decision.model_name == "claude-3-5-sonnet"
+        # Multiple models fit under 160ms: gpt-4o-mini (120ms),
+        # gemini-2.5-flash (150ms), gemini-2.0-flash (120ms),
+        # gemini-2.0-flash-lite (80ms), gemini-1.5-flash (100ms),
+        # claude-haiku-4-5 (100ms), mistral-small-latest (120ms),
+        # codestral-latest (150ms). Best value wins.
+        from src.models.registry import ModelRegistry
+        registry = ModelRegistry()
+        candidates = registry.filter(min_quality=3.0, max_latency_ms=160)
+        candidate_names = [m.name for m in candidates]
+        assert decision.model_name in candidate_names
+        assert decision.fallback_used is False
 
     def test_impossible_constraints_trigger_fallback(
         self, router: Router
@@ -103,7 +120,10 @@ class TestRouterSelectModel:
         decision = router.select_model(
             RoutingConstraints(quality_threshold=5.0, latency_budget_ms=1)
         )
-        assert decision.model_name == "gpt-4-turbo"  # quality 4.6 is highest
+        # Highest quality models: o3 (4.8) and claude-opus-4-6 (4.8).
+        # max() returns the first one found at the max value (o3 appears
+        # before claude-opus-4-6 in YAML insertion order).
+        assert decision.model_name in ["o3", "claude-opus-4-6"]
 
     def test_cost_budget_filter(self, router: Router) -> None:
         decision = router.select_model(

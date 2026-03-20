@@ -2,18 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import uuid
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.engine import get_db
 from app.db.models import AgentSession, CallTrace, RoutingDecisionLog
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# In-memory pub/sub for SSE live trace — lightweight, no Redis dependency
+_trace_subscribers: dict[str, list[asyncio.Queue]] = {}
+
+
+def publish_trace_event(org_id: str, trace_data: dict) -> None:
+    """Publish a new trace event to all SSE subscribers for this org."""
+    queues = _trace_subscribers.get(org_id, [])
+    for q in queues:
+        try:
+            q.put_nowait(trace_data)
+        except asyncio.QueueFull:
+            pass  # Drop if subscriber is behind
 
 
 async def _get_org_id(request: Request) -> uuid.UUID:
@@ -282,3 +301,70 @@ async def get_session_graph(
         "step_count": len(steps),
         "steps": steps,
     }
+
+
+# ── SSE Live Trace Stream ────────────────────────────────────────────────
+
+
+@router.get("/traces/live")
+async def live_traces(
+    request: Request,
+    agent_id: Optional[str] = Query(default=None),
+):
+    """SSE endpoint that streams new traces in real-time.
+
+    Clients connect via EventSource. Each event is a JSON-serialized trace.
+    Optional agent_id filter to only receive traces for a specific agent.
+    """
+    org_id = getattr(request.state, "org_id", None)
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Organisation context required")
+    org_str = str(org_id)
+
+    agent_filter = None
+    if agent_id:
+        try:
+            agent_filter = str(uuid.UUID(agent_id))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid agent_id format")
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+
+    # Register subscriber
+    if org_str not in _trace_subscribers:
+        _trace_subscribers[org_str] = []
+    _trace_subscribers[org_str].append(queue)
+
+    async def event_stream():
+        try:
+            # Send initial keepalive
+            yield f"event: connected\ndata: {json.dumps({'status': 'connected'})}\n\n"
+            while True:
+                try:
+                    trace_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    # Apply agent filter if specified
+                    if agent_filter and trace_data.get("agent_id") != agent_filter:
+                        continue
+                    yield f"data: {json.dumps(trace_data)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive comment every 30s
+                    yield ": keepalive\n\n"
+                except asyncio.CancelledError:
+                    break
+        finally:
+            # Unregister subscriber
+            subs = _trace_subscribers.get(org_str, [])
+            if queue in subs:
+                subs.remove(queue)
+            if not subs and org_str in _trace_subscribers:
+                del _trace_subscribers[org_str]
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

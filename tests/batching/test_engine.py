@@ -180,14 +180,14 @@ class TestBatchEngine:
 
     def test_ineligible_prompt_too_large(self, engine: BatchEngine) -> None:
         """A prompt whose tokens exceed model_max_input / max_batch_size."""
-        # claude-3-5-sonnet has max_input_tokens=200000
-        # per-request limit = 200000 / 10 = 20000 tokens
-        # Need a prompt that estimates to >20000 tokens
-        huge_prompt = " ".join(["word"] * 20000)  # ~26000 tokens
+        # deepseek-chat has max_input_tokens=64000
+        # per-request limit = 64000 / 10 = 6400 tokens
+        # Need a prompt that estimates to >6400 tokens (~1.3 tokens/word)
+        huge_prompt = " ".join(["word"] * 6000)  # ~7800 tokens
         result = engine.evaluate(
             prompt=huge_prompt,
             task_type="summarization",
-            model="claude-3-5-sonnet",
+            model="deepseek-chat",
             latency_budget_ms=5000,
         )
         assert result.eligible is False

@@ -12,7 +12,7 @@ class TestStepBasedValidation:
         errors = validate_rule("step_based", {
             "rules": [
                 {"step": 1, "model": "gpt-4o-mini"},
-                {"step": 3, "model": "gpt-4-turbo"},
+                {"step": 3, "model": "gpt-4o"},
             ]
         })
         assert errors == []
@@ -31,7 +31,7 @@ class TestStepBasedValidation:
         errors = validate_rule("step_based", {
             "rules": [
                 {"step": 1, "model": "gpt-4o-mini"},
-                {"step": 1, "model": "gpt-4-turbo"},
+                {"step": 1, "model": "gpt-4o"},
             ]
         })
         assert any("Duplicate" in e for e in errors)
@@ -50,7 +50,7 @@ class TestTimeBasedValidation:
         errors = validate_rule("time_based", {
             "rules": [
                 {"hours": "0-8", "model": "gpt-4o-mini"},
-                {"hours": "9-17", "model": "gpt-4-turbo"},
+                {"hours": "9-17", "model": "gpt-4o"},
                 {"hours": "18-23", "model": "gpt-4o-mini"},
             ]
         })
@@ -72,7 +72,7 @@ class TestTimeBasedValidation:
         errors = validate_rule("time_based", {
             "rules": [
                 {"hours": "0-12", "model": "gpt-4o-mini"},
-                {"hours": "10-20", "model": "gpt-4-turbo"},
+                {"hours": "10-20", "model": "gpt-4o"},
             ]
         })
         assert any("Overlapping" in e for e in errors)
@@ -89,25 +89,25 @@ class TestFallbackChainValidation:
 
     def test_valid_chain(self) -> None:
         errors = validate_rule("fallback_chain", {
-            "chain": ["gpt-4-turbo", "gpt-4o-mini"]
+            "chain": ["gpt-4o", "gpt-4o-mini"]
         })
         assert errors == []
 
     def test_chain_too_short(self) -> None:
         errors = validate_rule("fallback_chain", {
-            "chain": ["gpt-4-turbo"]
+            "chain": ["gpt-4o"]
         })
         assert any("at least 2" in e for e in errors)
 
     def test_chain_with_unknown_model(self) -> None:
         errors = validate_rule("fallback_chain", {
-            "chain": ["gpt-4-turbo", "nonexistent"]
+            "chain": ["gpt-4o", "nonexistent"]
         })
         assert any("Unknown model" in e for e in errors)
 
     def test_chain_with_duplicates(self) -> None:
         errors = validate_rule("fallback_chain", {
-            "chain": ["gpt-4-turbo", "gpt-4-turbo"]
+            "chain": ["gpt-4o", "gpt-4o"]
         })
         assert any("duplicate" in e for e in errors)
 
@@ -132,7 +132,7 @@ class TestOtherRuleTypes:
         assert any("value" in e for e in errors)
 
     def test_valid_allowlist(self) -> None:
-        errors = validate_rule("model_allowlist", {"models": ["gpt-4-turbo", "gpt-4o"]})
+        errors = validate_rule("model_allowlist", {"models": ["gpt-4o", "gpt-4o-mini"]})
         assert errors == []
 
     def test_allowlist_unknown_model(self) -> None:
@@ -144,7 +144,7 @@ class TestOtherRuleTypes:
         assert errors == []
 
     def test_unknown_provider(self) -> None:
-        errors = validate_rule("provider_restriction", {"provider": "google"})
+        errors = validate_rule("provider_restriction", {"provider": "nonexistent_provider"})
         assert any("Unknown provider" in e for e in errors)
 
     def test_unknown_rule_type(self) -> None:

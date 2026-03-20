@@ -46,6 +46,7 @@ class AgentUpdateRequest(BaseModel):
     model_endpoint_id: Optional[str] = None
     is_active: Optional[bool] = None
     metadata: Optional[dict] = None
+    risk_threshold_overrides: Optional[dict] = None
 
 
 class SessionCreateRequest(BaseModel):
@@ -103,6 +104,7 @@ def _serialize_agent(agent: Agent) -> dict:
         "model_endpoint_id": str(agent.model_endpoint_id) if agent.model_endpoint_id else None,
         "is_active": agent.is_active,
         "metadata": agent.metadata_ or {},
+        "risk_threshold_overrides": agent.risk_threshold_overrides,
         "created_at": agent.created_at.isoformat(),
         "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
     }
@@ -181,6 +183,8 @@ async def update_agent(
         agent.is_active = body.is_active
     if body.metadata is not None:
         agent.metadata_ = body.metadata
+    if body.risk_threshold_overrides is not None:
+        agent.risk_threshold_overrides = body.risk_threshold_overrides
 
     await db.flush()
     return _serialize_agent(agent)

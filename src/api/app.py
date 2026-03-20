@@ -751,32 +751,10 @@ def create_app(use_mock: bool = False) -> FastAPI:
         summary="View cost, latency, and quality analytics",
     )
     async def metrics(request: Request) -> Dict[str, Any]:
-        """Return aggregated analytics for the authenticated org. Requires auth; no cross-org data."""
+        """Return aggregated analytics. When authenticated with org_id, scoped to org; otherwise global."""
         _require_auth(request)
         org_id = _get_org_id(request)
         optimizer: InferenceOptimizer = request.app.state.optimizer
-        if org_id is None:
-            return {
-                "total_cost": 0.0,
-                "gpt4_equivalent_cost": 0.0,
-                "requests": 0,
-                "avg_latency_ms": 0.0,
-                "cache_hit_rate": 0.0,
-                "cache_cost_saved": 0.0,
-                "cache_size": 0,
-                "cost_by_model": {},
-                "requests_by_model": {},
-                "estimated_savings_vs_gpt4": 0.0,
-                "absolute_savings": 0.0,
-                "tier1_hits": 0,
-                "tier1_misses": 0,
-                "tier2_hits": 0,
-                "tier2_misses": 0,
-                "tier3_hits": 0,
-                "tier3_misses": 0,
-                "uptime_seconds": round(time.time() - request.app.state.start_time, 1),
-                "avg_quality": None,
-            }
         return optimizer.get_metrics(org_id=org_id)
 
     @app.get(

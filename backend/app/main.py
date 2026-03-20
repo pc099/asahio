@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
-from app.api import aba, admin, agents, analytics, auth, billing, gateway, governance, health, interventions, keys, models, orgs, routing, traces
+from app.api import aba, admin, agents, analytics, auth, billing, cache, gateway, governance, health, interventions, keys, models, orgs, providers, routing, traces
 from app.config import get_settings
 from app.db import engine as _db_engine_mod
 from app.db.models import Base
@@ -232,6 +232,8 @@ def create_app() -> FastAPI:
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(aba.router, tags=["aba"])
     app.include_router(interventions.router, prefix="/interventions", tags=["interventions"])
+    app.include_router(providers.router, prefix="/providers", tags=["providers"])
+    app.include_router(cache.router, prefix="/cache", tags=["cache"])
     app.include_router(health.router)
 
     @app.get("/health")

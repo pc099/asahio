@@ -8,6 +8,7 @@ Uses fast regex/heuristic checks (<1ms target) to classify dependency level:
 """
 
 import enum
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -219,3 +220,27 @@ class DependencyClassifier:
             if entity in prompt_lower:
                 signals.append(f"entity_ref:{entity}")
         return signals
+
+
+def build_dependency_fingerprint(
+    dependency_levels: list[str],
+    session_step: Optional[int] = None,
+) -> str:
+    """Build a stable fingerprint from sorted dependency classifications.
+
+    This fingerprint is used as a cache key suffix so that requests with
+    different dependency contexts hit different cache entries.
+
+    Args:
+        dependency_levels: List of DependencyLevel values from prior steps
+            in the session (e.g. ["INDEPENDENT", "PARTIAL", "DEPENDENT"]).
+        session_step: Current step number (optional, included in hash).
+
+    Returns:
+        A 16-character hex digest (first 16 chars of SHA-256).
+    """
+    sorted_levels = sorted(dependency_levels)
+    payload = "|".join(sorted_levels)
+    if session_step is not None:
+        payload += f"|step:{session_step}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]

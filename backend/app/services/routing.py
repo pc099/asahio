@@ -20,21 +20,14 @@ logger = logging.getLogger(__name__)
 # Default model catalog — maps model IDs to their properties.
 # In production, this would be loaded from ModelEndpoint or config/models.yaml.
 DEFAULT_MODELS = {
-    "gpt-4-turbo": {
-        "provider": "openai",
-        "cost_per_1k_input": 0.01,
-        "cost_per_1k_output": 0.03,
-        "quality_score": 0.95,
-        "max_context": 128_000,
-        "avg_latency_ms": 2000,
-    },
+    # ── OpenAI ──
     "gpt-4o": {
         "provider": "openai",
-        "cost_per_1k_input": 0.005,
-        "cost_per_1k_output": 0.015,
+        "cost_per_1k_input": 0.0025,
+        "cost_per_1k_output": 0.010,
         "quality_score": 0.93,
         "max_context": 128_000,
-        "avg_latency_ms": 1500,
+        "avg_latency_ms": 200,
     },
     "gpt-4o-mini": {
         "provider": "openai",
@@ -42,23 +35,91 @@ DEFAULT_MODELS = {
         "cost_per_1k_output": 0.0006,
         "quality_score": 0.82,
         "max_context": 128_000,
+        "avg_latency_ms": 120,
+    },
+    "o3": {
+        "provider": "openai",
+        "cost_per_1k_input": 0.010,
+        "cost_per_1k_output": 0.040,
+        "quality_score": 0.97,
+        "max_context": 200_000,
         "avg_latency_ms": 800,
     },
-    "claude-sonnet-4-5": {
+    # ── Anthropic ──
+    "claude-opus-4-6": {
+        "provider": "anthropic",
+        "cost_per_1k_input": 0.015,
+        "cost_per_1k_output": 0.075,
+        "quality_score": 0.97,
+        "max_context": 200_000,
+        "avg_latency_ms": 300,
+    },
+    "claude-sonnet-4-6": {
         "provider": "anthropic",
         "cost_per_1k_input": 0.003,
         "cost_per_1k_output": 0.015,
         "quality_score": 0.94,
         "max_context": 200_000,
-        "avg_latency_ms": 1800,
+        "avg_latency_ms": 180,
     },
-    "claude-haiku-3-5": {
+    "claude-haiku-4-5": {
         "provider": "anthropic",
-        "cost_per_1k_input": 0.0008,
-        "cost_per_1k_output": 0.004,
+        "cost_per_1k_input": 0.00025,
+        "cost_per_1k_output": 0.00125,
         "quality_score": 0.80,
         "max_context": 200_000,
+        "avg_latency_ms": 100,
+    },
+    # ── Google ──
+    "gemini-2.5-pro": {
+        "provider": "google",
+        "cost_per_1k_input": 0.00125,
+        "cost_per_1k_output": 0.010,
+        "quality_score": 0.95,
+        "max_context": 1_000_000,
+        "avg_latency_ms": 400,
+    },
+    "gemini-2.5-flash": {
+        "provider": "google",
+        "cost_per_1k_input": 0.00015,
+        "cost_per_1k_output": 0.0006,
+        "quality_score": 0.85,
+        "max_context": 1_000_000,
+        "avg_latency_ms": 150,
+    },
+    # ── DeepSeek ──
+    "deepseek-chat": {
+        "provider": "deepseek",
+        "cost_per_1k_input": 0.00007,
+        "cost_per_1k_output": 0.0011,
+        "quality_score": 0.82,
+        "max_context": 64_000,
+        "avg_latency_ms": 250,
+    },
+    "deepseek-reasoner": {
+        "provider": "deepseek",
+        "cost_per_1k_input": 0.00055,
+        "cost_per_1k_output": 0.00219,
+        "quality_score": 0.90,
+        "max_context": 64_000,
         "avg_latency_ms": 600,
+    },
+    # ── Mistral ──
+    "mistral-large-latest": {
+        "provider": "mistral",
+        "cost_per_1k_input": 0.002,
+        "cost_per_1k_output": 0.006,
+        "quality_score": 0.92,
+        "max_context": 128_000,
+        "avg_latency_ms": 300,
+    },
+    "codestral-latest": {
+        "provider": "mistral",
+        "cost_per_1k_input": 0.0003,
+        "cost_per_1k_output": 0.0009,
+        "quality_score": 0.86,
+        "max_context": 256_000,
+        "avg_latency_ms": 150,
     },
 }
 

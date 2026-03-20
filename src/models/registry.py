@@ -40,7 +40,7 @@ class ModelProfile(BaseModel):
     """
 
     name: str
-    provider: Literal["openai", "anthropic", "mistral", "local"] = "openai"
+    provider: Literal["openai", "anthropic", "google", "deepseek", "mistral", "ollama", "local"] = "openai"
     api_key_env: str = "OPENAI_API_KEY"
     cost_per_1k_input_tokens: float = Field(ge=0.0)
     cost_per_1k_output_tokens: float = Field(ge=0.0)

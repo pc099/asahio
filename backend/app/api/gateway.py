@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.optimizer import GatewayResult, normalize_routing_mode, run_inference
 from app.db.engine import get_db
-from app.db.models import Agent, AgentSession, InterventionMode, ModelEndpoint
+from app.db.models import Agent, AgentSession, GuidedChain, InterventionMode, ModelEndpoint
 from app.services.metering import is_budget_exceeded, is_rate_limited
 from app.services.aba_writer import ABAObservationPayload, write_aba_observation
 from app.services.trace_writer import TracePayload, write_trace
@@ -39,6 +39,7 @@ class ChatCompletionRequest(BaseModel):
     agent_id: str | None = None
     session_id: str | None = None
     model_endpoint_id: str | None = None
+    chain_id: str | None = None
 
 
 async def _resolve_agent(db: AsyncSession, org_id: str, agent_id: str | None) -> Agent | None:
@@ -179,6 +180,34 @@ async def chat_completions(
     model_endpoint = await _resolve_model_endpoint(db, org_id, effective_model_endpoint_id)
     session = await _resolve_session(db, org_id, agent, body.session_id)
 
+    # Resolve guided chain if chain_id is provided
+    chain_config = None
+    if body.chain_id:
+        from sqlalchemy.orm import selectinload
+        chain_result = await db.execute(
+            select(GuidedChain)
+            .options(selectinload(GuidedChain.slots))
+            .where(GuidedChain.id == uuid.UUID(body.chain_id))
+        )
+        chain = chain_result.scalar_one_or_none()
+        if not chain or str(chain.organisation_id) != org_id:
+            raise HTTPException(status_code=404, detail="Chain not found")
+        chain_config = {
+            "chain_id": str(chain.id),
+            "name": chain.name,
+            "fallback_triggers": chain.fallback_triggers or [],
+            "slots": [
+                {
+                    "position": s.priority,
+                    "model_id": s.model,
+                    "provider": s.provider,
+                    "max_latency_ms": s.max_latency_ms,
+                    "max_cost_per_1k_tokens": float(s.max_cost_per_1k_tokens) if s.max_cost_per_1k_tokens else None,
+                }
+                for s in sorted(chain.slots, key=lambda s: s.priority)
+            ],
+        }
+
     effective_routing_mode = normalize_routing_mode(
         body.routing_mode or (agent.routing_mode.value if agent else None)
     )
@@ -236,6 +265,7 @@ async def chat_completions(
         fingerprint_hallucination_rate=fingerprint_hallucination_rate,
         agent_type=agent_type_hint,
         threshold_overrides=threshold_overrides,
+        chain_config=chain_config,
     )
     result.model_requested = body.model or (model_endpoint.model_id if model_endpoint else body.model)
 

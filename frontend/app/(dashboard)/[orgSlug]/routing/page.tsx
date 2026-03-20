@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getRoutingDecisions, listAgents, type RoutingDecisionItem } from "@/lib/api";
-import { GitBranch, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  getRoutingDecisions,
+  listAgents,
+  listConstraints,
+  type RoutingDecisionItem,
+} from "@/lib/api";
+import { GitBranch, ChevronDown, ChevronRight, Settings2, History, Link2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { VisualRuleBuilder } from "@/components/rules/visual-rule-builder";
+import { ChainBuilder } from "@/components/rules/chain-builder";
 
 const MODE_BADGE: Record<string, string> = {
   AUTO: "bg-emerald-500/20 text-emerald-400",
@@ -12,10 +20,13 @@ const MODE_BADGE: Record<string, string> = {
   GUIDED: "bg-amber-500/20 text-amber-400",
 };
 
+type Tab = "rules" | "chains" | "decisions";
+
 export default function RoutingPage() {
   const params = useParams();
   const orgSlug = typeof params?.orgSlug === "string" ? params.orgSlug : "";
 
+  const [tab, setTab] = useState<Tab>("rules");
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -25,7 +36,7 @@ export default function RoutingPage() {
     enabled: !!orgSlug,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data: decisionsData, isLoading: decisionsLoading } = useQuery({
     queryKey: ["routing-decisions", orgSlug, agentFilter],
     queryFn: () =>
       getRoutingDecisions(
@@ -33,66 +44,138 @@ export default function RoutingPage() {
         undefined,
         orgSlug,
       ),
+    enabled: !!orgSlug && tab === "decisions",
+  });
+
+  const { data: constraintsData } = useQuery({
+    queryKey: ["constraints", orgSlug],
+    queryFn: () => listConstraints({ active_only: false }, undefined, orgSlug),
     enabled: !!orgSlug,
   });
 
-  const decisions = data?.data ?? [];
+  const decisions = decisionsData?.data ?? [];
   const agents = agentsData?.data ?? [];
+  const constraints = constraintsData?.data ?? [];
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Routing Decisions</h1>
+          <h1 className="text-2xl font-bold text-foreground">Routing</h1>
           <p className="text-sm text-muted-foreground">
-            Audit trail of how ASAHIO selected models for each request.
+            Configure routing rules and view decision audit trail.
           </p>
         </div>
-        <select
-          value={agentFilter}
-          onChange={(e) => setAgentFilter(e.target.value)}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground"
-        >
-          <option value="">All Agents</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground">Loading decisions...</div>
-      ) : decisions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
-          <GitBranch className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">No routing decisions recorded yet.</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="w-8 px-2 py-3"></th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Time</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Routing Mode</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Selected Model</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Provider</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Confidence</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">Summary</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {decisions.map((d) => (
-                <DecisionRow
-                  key={d.id}
-                  decision={d}
-                  expanded={expandedId === d.id}
-                  onToggle={() => setExpandedId(expandedId === d.id ? null : d.id)}
-                />
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border">
+        <button
+          type="button"
+          onClick={() => setTab("rules")}
+          className={cn(
+            "flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+            tab === "rules"
+              ? "border-asahio text-asahio"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Settings2 className="h-4 w-4" />
+          Rules
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("chains")}
+          className={cn(
+            "flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+            tab === "chains"
+              ? "border-asahio text-asahio"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Link2 className="h-4 w-4" />
+          Chains
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("decisions")}
+          className={cn(
+            "flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+            tab === "decisions"
+              ? "border-asahio text-asahio"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <History className="h-4 w-4" />
+          Decision Audit
+        </button>
+      </div>
+
+      {/* Rules tab */}
+      {tab === "rules" && (
+        <VisualRuleBuilder orgSlug={orgSlug} existingConstraints={constraints} />
+      )}
+
+      {/* Chains tab */}
+      {tab === "chains" && <ChainBuilder orgSlug={orgSlug} />}
+
+      {/* Decisions tab */}
+      {tab === "decisions" && (
+        <>
+          <div className="flex justify-end">
+            <select
+              value={agentFilter}
+              onChange={(e) => setAgentFilter(e.target.value)}
+              className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground"
+            >
+              <option value="">All Agents</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+          </div>
+
+          {decisionsLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              Loading decisions...
+            </div>
+          ) : decisions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
+              <GitBranch className="h-12 w-12 text-muted-foreground/50" />
+              <p className="mt-4 text-sm text-muted-foreground">
+                No routing decisions recorded yet.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border bg-muted/50">
+                  <tr>
+                    <th className="w-8 px-2 py-3"></th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Time</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Routing Mode</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Selected Model</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Provider</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Confidence</th>
+                    <th className="px-4 py-3 font-medium text-muted-foreground">Summary</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {decisions.map((d) => (
+                    <DecisionRow
+                      key={d.id}
+                      decision={d}
+                      expanded={expandedId === d.id}
+                      onToggle={() =>
+                        setExpandedId(expandedId === d.id ? null : d.id)
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -114,19 +197,27 @@ function DecisionRow({
         className="cursor-pointer hover:bg-muted/30 transition-colors"
       >
         <td className="px-2 py-3 text-muted-foreground">
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {expanded ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
         </td>
         <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
           {new Date(d.created_at).toLocaleString()}
         </td>
         <td className="px-4 py-3">
           {d.routing_mode && (
-            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${MODE_BADGE[d.routing_mode] ?? "bg-muted text-muted-foreground"}`}>
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${MODE_BADGE[d.routing_mode] ?? "bg-muted text-muted-foreground"}`}
+            >
               {d.routing_mode}
             </span>
           )}
         </td>
-        <td className="px-4 py-3 font-mono text-xs text-foreground">{d.selected_model ?? "-"}</td>
+        <td className="px-4 py-3 font-mono text-xs text-foreground">
+          {d.selected_model ?? "-"}
+        </td>
         <td className="px-4 py-3 text-muted-foreground">{d.selected_provider ?? "-"}</td>
         <td className="px-4 py-3">
           {d.confidence != null ? (
@@ -137,7 +228,9 @@ function DecisionRow({
                   style={{ width: `${Math.round(d.confidence * 100)}%` }}
                 />
               </div>
-              <span className="text-xs text-muted-foreground">{(d.confidence * 100).toFixed(0)}%</span>
+              <span className="text-xs text-muted-foreground">
+                {(d.confidence * 100).toFixed(0)}%
+              </span>
             </div>
           ) : (
             "-"
@@ -158,7 +251,9 @@ function DecisionRow({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Call Trace ID</span>
-                  <p className="font-mono text-xs text-foreground">{d.call_trace_id ?? "-"}</p>
+                  <p className="font-mono text-xs text-foreground">
+                    {d.call_trace_id ?? "-"}
+                  </p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Intervention Mode</span>

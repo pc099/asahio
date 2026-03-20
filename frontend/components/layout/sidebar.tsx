@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BarChart2,
@@ -12,6 +13,7 @@ import {
   GitBranch,
   Key,
   LayoutDashboard,
+  Radar,
   Server,
   Settings,
   Shield,
@@ -19,6 +21,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getOrgUsage } from "@/lib/api";
 
 interface NavItem {
   icon: typeof LayoutDashboard;
@@ -35,13 +38,14 @@ const navItems: NavItem[] = [
   { icon: Activity, label: "Traces", path: "/traces" },
   { icon: BarChart2, label: "Analytics", path: "/analytics" },
   { icon: Brain, label: "ABA", path: "/aba" },
+  { icon: Radar, label: "Fleet", path: "/fleet" },
   { icon: ShieldAlert, label: "Interventions", path: "/interventions" },
   { icon: GitBranch, label: "Routing", path: "/routing" },
   { icon: Server, label: "Models", path: "/models" },
   { icon: CreditCard, label: "Billing", path: "/billing" },
   { icon: Key, label: "API Keys", path: "/keys" },
   { icon: Shield, label: "Governance", path: "/governance" },
-  { icon: BookOpen, label: "Docs", path: "/docs", absolute: true },
+  { icon: BookOpen, label: "Docs", path: "/docs" },
 ];
 
 const bottomItems = [
@@ -124,6 +128,48 @@ function SidebarNav({ orgSlug, currentPath, onItemClick }: NavProps) {
   );
 }
 
+function UsageBars({ orgSlug }: { orgSlug: string }) {
+  const { data: usage } = useQuery({
+    queryKey: ["usage", orgSlug, "sidebar"],
+    queryFn: () => getOrgUsage(orgSlug),
+    refetchInterval: 60_000,
+  });
+
+  if (!usage) return null;
+
+  const barColor = (pct: number) =>
+    pct >= 95 ? "bg-red-500" : pct >= 80 ? "bg-orange-500" : pct >= 60 ? "bg-yellow-500" : "bg-asahio";
+
+  return (
+    <div className="space-y-2 px-6 py-3 border-t border-border">
+      <div>
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>Requests</span>
+          <span>{usage.requests_pct.toFixed(0)}%</span>
+        </div>
+        <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full transition-all", barColor(usage.requests_pct))}
+            style={{ width: `${Math.min(100, usage.requests_pct)}%` }}
+          />
+        </div>
+      </div>
+      <div>
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>Tokens</span>
+          <span>{usage.tokens_pct.toFixed(0)}%</span>
+        </div>
+        <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full transition-all", barColor(usage.tokens_pct))}
+            style={{ width: `${Math.min(100, usage.tokens_pct)}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar({
   orgSlug,
   currentPath,
@@ -140,6 +186,7 @@ export function Sidebar({
           <span className="text-lg font-bold text-foreground">ASAHIO</span>
         </div>
         <SidebarNav orgSlug={orgSlug} currentPath={currentPath} />
+        <UsageBars orgSlug={orgSlug} />
         <div className="border-t border-border px-6 py-3">
           <p className="truncate text-xs text-muted-foreground">{orgSlug}</p>
         </div>
