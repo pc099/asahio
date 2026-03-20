@@ -49,14 +49,10 @@ async def health_ready(request: Request):
 
     # Pinecone
     try:
-        from app.services.cache import RedisCache
+        from app.services.cache import get_pinecone_index
 
-        if redis:
-            cache = RedisCache(redis)
-            pc_index = cache._get_pinecone_index()
-            components["pinecone"] = "connected" if pc_index is not None else "not_configured"
-        else:
-            components["pinecone"] = "not_configured"
+        pc_index = get_pinecone_index()
+        components["pinecone"] = "connected" if pc_index is not None else "not_configured"
     except Exception:
         components["pinecone"] = "unavailable"
 

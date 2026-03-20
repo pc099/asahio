@@ -10,6 +10,10 @@ export const metadata: Metadata = {
   title: "ASAHIO - Enterprise Agent Control Plane",
   description:
     "Routing, caching, billing, and observability for production LLM agents and inference systems.",
+  icons: {
+    icon: "/asashio_logo-NB.png",
+    apple: "/asashio_logo-NB.png",
+  },
 };
 
 export default function RootLayout({

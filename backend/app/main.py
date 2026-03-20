@@ -106,16 +106,19 @@ async def lifespan(app: FastAPI):
         await app.state.redis.ping()
         logger.info("Redis connected at %s", settings.redis_url)
 
-        # Verify Pinecone semantic cache connectivity
+        # Eagerly initialise Pinecone singleton at startup so any config
+        # errors surface immediately in the boot log (not buried per-request).
         try:
-            from app.services.cache import RedisCache
+            from app.services.cache import get_pinecone_index
 
-            cache = RedisCache(app.state.redis)
-            pc_index = cache._get_pinecone_index()
+            pc_index = get_pinecone_index()
             if pc_index is not None:
-                logger.info("Pinecone semantic cache connected")
+                logger.info("Pinecone semantic cache connected and validated")
             else:
-                logger.info("Pinecone not configured — semantic cache uses Redis-only mode")
+                logger.warning(
+                    "Pinecone semantic cache DISABLED — check PINECONE_API_KEY, "
+                    "EMBEDDING_PROVIDER, and COHERE_API_KEY env vars"
+                )
         except Exception:
             logger.warning("Pinecone connectivity check failed — semantic cache disabled")
     except Exception:

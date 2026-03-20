@@ -30,6 +30,75 @@ SEMANTIC_THRESHOLD = 0.85  # Minimum cosine similarity for a semantic hit
 PROMOTION_THRESHOLD = 0.95  # Semantic hits above this get promoted to exact
 
 
+# ---------------------------------------------------------------------------
+# Module-level Pinecone singleton — avoids reconnecting on every request
+# ---------------------------------------------------------------------------
+_pinecone_index = None          # The connected index, or _PINECONE_UNAVAILABLE
+_PINECONE_UNAVAILABLE = "UNAVAILABLE"  # sentinel: init was attempted and failed
+
+
+def get_pinecone_index():
+    """Return the shared Pinecone index (lazy-init, singleton).
+
+    Returns the index object on success, or None if Pinecone is not
+    configured / connection failed / embedding dimensions don't match.
+    Once a failure is recorded the result is cached — no retries until
+    ``reset_pinecone_index()`` is called (e.g. at next deploy).
+    """
+    global _pinecone_index
+    if _pinecone_index is _PINECONE_UNAVAILABLE:
+        return None
+    if _pinecone_index is not None:
+        return _pinecone_index
+
+    try:
+        from app.config import get_settings
+
+        settings = get_settings()
+        if not settings.pinecone_api_key:
+            logger.debug("Pinecone API key not set — semantic cache disabled")
+            _pinecone_index = _PINECONE_UNAVAILABLE
+            return None
+
+        from pinecone import Pinecone
+
+        pc = Pinecone(api_key=settings.pinecone_api_key)
+        if settings.pinecone_host:
+            idx = pc.Index(host=settings.pinecone_host)
+            logger.info("Connected to Pinecone via host: %s", settings.pinecone_host)
+        else:
+            idx = pc.Index(settings.pinecone_index_name)
+            logger.info("Connected to Pinecone index: %s", settings.pinecone_index_name)
+
+        # Validate embedding dimensions match the Pinecone index
+        embed_dims = get_vector_dim()
+        expected_dims = settings.embedding_dimensions
+        if embed_dims != expected_dims:
+            logger.error(
+                "Embedding dimension mismatch: provider produces %d dims "
+                "but Pinecone index expects %d dims. "
+                "Set EMBEDDING_PROVIDER=cohere and COHERE_API_KEY to fix. "
+                "Semantic cache disabled.",
+                embed_dims,
+                expected_dims,
+            )
+            _pinecone_index = _PINECONE_UNAVAILABLE
+            return None
+
+        _pinecone_index = idx
+        return _pinecone_index
+    except Exception as exc:
+        logger.warning("Could not connect to Pinecone — semantic cache disabled: %s", exc)
+        _pinecone_index = _PINECONE_UNAVAILABLE
+        return None
+
+
+def reset_pinecone_index() -> None:
+    """Clear the cached Pinecone index. Used in tests or after config changes."""
+    global _pinecone_index
+    _pinecone_index = None
+
+
 @dataclass
 class CacheMetrics:
     """Tracks cache hit/miss statistics."""
@@ -74,57 +143,18 @@ class RedisCache:
 
     def __init__(self, redis_client, pinecone_index=None):
         self._redis = redis_client
-        self._pinecone_index = pinecone_index
+        self._pinecone_override = pinecone_index  # only used by tests
         self._metrics = CacheMetrics()
 
     @property
     def metrics(self) -> CacheMetrics:
         return self._metrics
 
-    # —— Pinecone lazy init ————————————————————
-
     def _get_pinecone_index(self):
-        """Return the Pinecone index, initialising lazily if needed."""
-        if self._pinecone_index is not None:
-            return self._pinecone_index
-
-        try:
-            from app.config import get_settings
-
-            settings = get_settings()
-            if not settings.pinecone_api_key:
-                logger.debug("Pinecone API key not set — semantic cache disabled")
-                return None
-
-            from pinecone import Pinecone
-
-            pc = Pinecone(api_key=settings.pinecone_api_key)
-            # Prefer host (skips describe_index call) over name lookup
-            if settings.pinecone_host:
-                self._pinecone_index = pc.Index(host=settings.pinecone_host)
-                logger.info("Connected to Pinecone via host: %s", settings.pinecone_host)
-            else:
-                self._pinecone_index = pc.Index(settings.pinecone_index_name)
-                logger.info("Connected to Pinecone index: %s", settings.pinecone_index_name)
-
-            # Validate embedding dimensions match the Pinecone index
-            embed_dims = get_vector_dim()
-            expected_dims = settings.embedding_dimensions
-            if embed_dims != expected_dims:
-                logger.error(
-                    "Embedding dimension mismatch: provider produces %d dims "
-                    "but Pinecone index expects %d dims. Set EMBEDDING_PROVIDER=cohere "
-                    "and COHERE_API_KEY to fix. Semantic cache disabled.",
-                    embed_dims,
-                    expected_dims,
-                )
-                self._pinecone_index = None
-                return None
-
-            return self._pinecone_index
-        except Exception as exc:
-            logger.warning("Could not connect to Pinecone — semantic cache disabled: %s", exc)
-            return None
+        """Return the Pinecone index — delegates to module-level singleton."""
+        if self._pinecone_override is not None:
+            return self._pinecone_override
+        return get_pinecone_index()
 
     # —— Exact Cache (Tier 1) —————————————————
 
@@ -203,12 +233,26 @@ class RedisCache:
                 include_metadata=True,
             )
 
-            if results.get("matches"):
-                match = results["matches"][0]
-                similarity = float(match["score"])
+            # Pinecone v5+ returns objects with .matches attribute;
+            # older versions return dicts — handle both.
+            matches = getattr(results, "matches", None)
+            if matches is None and isinstance(results, dict):
+                matches = results.get("matches")
+
+            if matches:
+                match = matches[0]
+                # Pinecone v5+ objects use attribute access; dicts use key access
+                similarity = float(
+                    match["score"] if isinstance(match, dict) else match.score
+                )
 
                 if similarity >= threshold:
-                    meta = match.get("metadata", {})
+                    meta = (
+                        match.get("metadata", {}) if isinstance(match, dict)
+                        else getattr(match, "metadata", {})
+                    )
+                    if not isinstance(meta, dict):
+                        meta = dict(meta)
                     return CacheHit(
                         response=meta.get("response", ""),
                         model_used=meta.get("model", "cached"),

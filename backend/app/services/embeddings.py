@@ -132,7 +132,16 @@ _provider: Optional[EmbeddingProvider] = None
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Return the active embedding provider (lazy-init, cached)."""
+    """Return the active embedding provider (lazy-init, cached).
+
+    Selection logic:
+    1. If COHERE_API_KEY is set → use Cohere (1024 dims, production).
+       This applies even if EMBEDDING_PROVIDER is left at the default "local",
+       because having the key implies intent to use Cohere and the Pinecone
+       index expects 1024-dim vectors.
+    2. If EMBEDDING_PROVIDER="local" and no Cohere key → use sentence-transformers.
+    3. Fallback → deterministic hash embeddings (testing only).
+    """
     global _provider
     if _provider is not None:
         return _provider
@@ -141,7 +150,11 @@ def get_embedding_provider() -> EmbeddingProvider:
 
     settings = get_settings()
 
-    if settings.embedding_provider == "cohere" and settings.cohere_api_key:
+    # Auto-detect: if Cohere key is present, prefer Cohere regardless of
+    # embedding_provider setting.  This prevents the common misconfiguration
+    # where COHERE_API_KEY is set but EMBEDDING_PROVIDER is still "local",
+    # which produces 384-dim vectors that fail against the 1024-dim Pinecone index.
+    if settings.cohere_api_key:
         try:
             _provider = CohereProvider(settings.cohere_api_key)
             logger.info("Using Cohere embedding provider (%d dims)", _provider.dimensions)
@@ -156,7 +169,7 @@ def get_embedding_provider() -> EmbeddingProvider:
         except ImportError:
             logger.warning("sentence-transformers not installed — using fallback hash embeddings")
 
-    _provider = FallbackProvider(dims=settings.embedding_dimensions if settings.embedding_provider == "cohere" else FALLBACK_DIMS)
+    _provider = FallbackProvider(dims=settings.embedding_dimensions if settings.cohere_api_key else FALLBACK_DIMS)
     logger.info("Using fallback hash embedding provider (%d dims)", _provider.dimensions)
     return _provider
 
