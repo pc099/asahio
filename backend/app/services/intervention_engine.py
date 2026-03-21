@@ -22,15 +22,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Default models for rerouting ──────────────────────────────────────
-
-DEFAULT_MODELS = [
-    "claude-opus-4",
-    "gpt-4-turbo",
-    "gpt-4o",
-    "claude-sonnet-4",
-    "claude-3-5-sonnet",
-]
+# Model catalog used for rerouting — loaded dynamically from routing module.
 
 # ── Augmentation text ──────────────────────────────────────────────────
 
@@ -240,11 +232,12 @@ class InterventionEngine:
 
 
 def _select_stronger_model(current_model: Optional[str]) -> str:
-    """Select the strongest model that isn't the current one."""
-    if current_model is None:
-        return DEFAULT_MODELS[0]
-    current_lower = current_model.lower()
-    for model in DEFAULT_MODELS:
-        if model.lower() != current_lower:
-            return model
-    return DEFAULT_MODELS[0]
+    """Select the highest-quality model that isn't the current one."""
+    from app.services.routing import get_model_catalog
+
+    catalog = get_model_catalog()
+    ranked = sorted(catalog.items(), key=lambda x: x[1].get("quality_score", 0), reverse=True)
+    for model_id, _ in ranked:
+        if model_id != current_model:
+            return model_id
+    return ranked[0][0] if ranked else "claude-opus-4-6"

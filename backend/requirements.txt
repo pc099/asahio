@@ -16,6 +16,9 @@ redis[hiredis]>=5.0.0,<6
 # Stripe
 stripe>=11.0.0,<12
 
+# YAML config
+PyYAML>=6.0.0,<7
+
 # HTTP client
 httpx>=0.27.0,<1
 

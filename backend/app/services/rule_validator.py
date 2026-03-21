@@ -7,7 +7,7 @@ Returns a list of validation errors — empty means valid.
 import logging
 from typing import Optional
 
-from app.services.routing import DEFAULT_MODELS
+from app.services.routing import get_model_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,12 @@ def validate_rule(
     Args:
         rule_type: The type of rule to validate.
         rule_config: The rule configuration payload.
-        known_models: Set of known model IDs. Defaults to DEFAULT_MODELS keys.
+        known_models: Set of known model IDs. Defaults to model catalog keys.
 
     Returns:
         List of validation error strings. Empty list means valid.
     """
-    models = known_models or set(DEFAULT_MODELS.keys())
+    models = known_models or set(get_model_catalog().keys())
     errors: list[str] = []
 
     if rule_type not in VALID_RULE_TYPES:

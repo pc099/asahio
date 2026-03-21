@@ -6,6 +6,7 @@ Rate limits are per-org and per-API-key.
 
 import logging
 import time
+import uuid
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -46,7 +47,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         pipe = redis.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
         pipe.zcard(key)
-        pipe.zadd(key, {f"{now}": now})
+        member = f"{now}:{uuid.uuid4().hex[:8]}"
+        pipe.zadd(key, {member: now})
         pipe.expire(key, window + 1)
         results = await pipe.execute()
 

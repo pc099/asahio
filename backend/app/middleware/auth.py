@@ -293,12 +293,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     options={"verify_aud": False},
                 )
             else:
-                # Fallback: no JWKS configured â€” decode without verification (dev only)
-                logger.warning("JWKS not configured â€” skipping JWT signature verification")
-                payload = jwt.decode(
-                    token,
-                    options={"verify_signature": False},
-                    algorithms=["RS256"],
+                logger.error("JWKS not configured — rejecting JWT authentication")
+                return JSONResponse(
+                    {"error": {"code": "auth_unavailable", "message": "Authentication service not configured"}},
+                    status_code=503,
                 )
         except jwt.PyJWTError as e:
             logger.warning("JWT verification failed: %s", e)

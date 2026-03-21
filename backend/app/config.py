@@ -22,6 +22,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Environment: "development", "staging", "production"
+    environment: str = "development"
+
     # Database
     database_url: str = "postgresql+asyncpg://asahio:asahio_dev_password@localhost:5432/asahio"
     auto_create_schema: bool = False

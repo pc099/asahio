@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "asahio-ai"
+name = "asahio"
 version = "0.1.0"
 description = "Enterprise LLM agent control plane SDK for routing, caching, and observability"
 readme = "README.md"

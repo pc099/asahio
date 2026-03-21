@@ -94,8 +94,14 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     if settings.auto_create_schema:
-        logger.warning("AUTO_CREATE_SCHEMA is enabled; creating schema outside Alembic.")
-        await _ensure_schema()
+        if settings.environment == "production":
+            logger.error(
+                "AUTO_CREATE_SCHEMA=true in production — IGNORING. "
+                "Use Alembic migrations. Set AUTO_CREATE_SCHEMA=false."
+            )
+        else:
+            logger.warning("AUTO_CREATE_SCHEMA is enabled; creating schema outside Alembic.")
+            await _ensure_schema()
 
     # Connect to Redis
     try:

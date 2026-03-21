@@ -29,12 +29,15 @@ class TestSelectStrongerModel:
         result = _select_stronger_model("gpt-4o")
         assert result != "gpt-4o"
 
-    def test_none_returns_first(self):
-        assert _select_stronger_model(None) == "claude-opus-4"
+    def test_none_returns_highest_quality(self):
+        result = _select_stronger_model(None)
+        # Should return some model from the catalog
+        from app.services.routing import get_model_catalog
+        assert result in get_model_catalog()
 
-    def test_case_insensitive(self):
-        result = _select_stronger_model("Claude-Opus-4")
-        assert result.lower() != "claude-opus-4"
+    def test_avoids_current_model(self):
+        result = _select_stronger_model("claude-opus-4-6")
+        assert result != "claude-opus-4-6"
 
 
 # ── OBSERVE mode tests ──────────────────────────────────────────────

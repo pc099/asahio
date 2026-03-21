@@ -36,13 +36,23 @@ _DEFAULT_MODEL_RISK = 0.12
 
 @dataclass
 class RiskScoringConfig:
-    """Weights for the 5 risk factors. Must sum to 1.0."""
+    """Weights for the 5 risk factors (must sum to 1.0) and tunable thresholds."""
 
     sequence_position_weight: float = 0.15
     model_specific_weight: float = 0.25
     propagation_weight: float = 0.20
     complexity_weight: float = 0.20
     global_pattern_weight: float = 0.20
+
+    # Sequence position breakpoints
+    seq_risk_step1: float = 0.2
+    seq_risk_step3: float = 0.3
+    seq_risk_step7: float = 0.4
+    seq_risk_max: float = 0.5
+
+    # Complexity sigmoid parameters
+    complexity_center: float = 0.5
+    complexity_steepness: float = 6.0
 
 
 @dataclass
@@ -66,17 +76,18 @@ def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
-def _sequence_position_risk(session_step: Optional[int]) -> float:
+def _sequence_position_risk(session_step: Optional[int], cfg: Optional[RiskScoringConfig] = None) -> float:
     """Risk based on position in multi-step session."""
+    c = cfg or RiskScoringConfig()
     if session_step is None or session_step <= 0:
-        return 0.2
+        return c.seq_risk_step1
     if session_step == 1:
-        return 0.2
+        return c.seq_risk_step1
     if session_step <= 3:
-        return 0.3
+        return c.seq_risk_step3
     if session_step <= 7:
-        return 0.4
-    return 0.5
+        return c.seq_risk_step7
+    return c.seq_risk_max
 
 
 def _model_specific_risk(
@@ -117,9 +128,10 @@ def _propagation_amplifier(dep_level: Optional[DependencyLevel]) -> float:
     return dep_score
 
 
-def _complexity_risk(complexity_score: float) -> float:
-    """Transform complexity score through sigmoid centered at 0.5."""
-    return _sigmoid((complexity_score - 0.5) * 6)
+def _complexity_risk(complexity_score: float, cfg: Optional[RiskScoringConfig] = None) -> float:
+    """Transform complexity score through sigmoid."""
+    c = cfg or RiskScoringConfig()
+    return _sigmoid((complexity_score - c.complexity_center) * c.complexity_steepness)
 
 
 class RiskScoringEngine:
@@ -155,7 +167,7 @@ class RiskScoringEngine:
         cfg = self._config
 
         # Factor 1: Sequence position
-        seq_risk = _sequence_position_risk(session_step)
+        seq_risk = _sequence_position_risk(session_step, cfg)
 
         # Factor 2: Model-specific risk
         model_risk = _model_specific_risk(model_id, fingerprint_hallucination_rate)
@@ -167,7 +179,7 @@ class RiskScoringEngine:
         # Factor 4: Complexity risk
         messages = [{"content": prompt}]
         complexity_result = self._extractor.query_complexity_score(messages)
-        comp_risk = _complexity_risk(complexity_result.score)
+        comp_risk = _complexity_risk(complexity_result.score, cfg)
 
         # Factor 5: Global pattern risk — skipped in fast path
         global_risk = 0.5  # neutral default
@@ -231,7 +243,7 @@ class RiskScoringEngine:
         cfg = self._config
 
         # Factor 1: Sequence position
-        seq_risk = _sequence_position_risk(session_step)
+        seq_risk = _sequence_position_risk(session_step, cfg)
 
         # Factor 2: Model-specific risk — enhanced with hallucination check
         halluc_result = self._detector.check(prompt, response)
@@ -251,7 +263,7 @@ class RiskScoringEngine:
         # Factor 4: Complexity risk
         messages = [{"content": prompt}]
         complexity_result = self._extractor.query_complexity_score(messages)
-        comp_risk = _complexity_risk(complexity_result.score)
+        comp_risk = _complexity_risk(complexity_result.score, cfg)
 
         # Factor 5: Global pattern risk via Model C
         global_risk = 0.5  # default
@@ -265,7 +277,7 @@ class RiskScoringEngine:
                 if risk_prior.confidence > 0:
                     global_risk = risk_prior.risk_score
             except Exception:
-                logger.debug("Model C query failed, using neutral prior")
+                logger.warning("Model C query failed — using neutral prior", exc_info=True)
 
         # Weighted composite
         composite = (

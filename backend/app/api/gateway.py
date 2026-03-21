@@ -339,6 +339,7 @@ async def chat_completions(
     metadata = _build_metadata(result, body.session_id)
 
     if body.stream:
+        metadata["streaming"] = "simulated"
         return StreamingResponse(
             _stream_response(completion_id, result, metadata),
             media_type="text/event-stream",
@@ -371,6 +372,14 @@ async def chat_completions(
 
 
 async def _stream_response(completion_id: str, result: GatewayResult, metadata: dict):
+    """Yield SSE chunks from a pre-computed response.
+
+    NOTE: This is *simulated* streaming. The full LLM response is generated
+    first, then chunked into word-level SSE events. Real token-by-token
+    streaming from the provider is not yet implemented. Operators should be
+    aware this does NOT reduce time-to-first-token.
+    """
+
     def _chunk(content: Optional[str], finish_reason: Optional[str]) -> str:
         payload = {
             "id": completion_id,

@@ -13,14 +13,19 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
-# Default model catalog — maps model IDs to their properties.
-# In production, this would be loaded from ModelEndpoint or config/models.yaml.
-DEFAULT_MODELS = {
-    # ── OpenAI ──
+# ── Model catalog — single source of truth from config/models.yaml ──────────
+
+_YAML_PATH = Path(__file__).resolve().parents[3] / "config" / "models.yaml"
+
+# Hardcoded fallback — used only if YAML loading fails.
+_FALLBACK_MODELS = {
     "gpt-4o": {
         "provider": "openai",
         "cost_per_1k_input": 0.0025,
@@ -29,23 +34,6 @@ DEFAULT_MODELS = {
         "max_context": 128_000,
         "avg_latency_ms": 200,
     },
-    "gpt-4o-mini": {
-        "provider": "openai",
-        "cost_per_1k_input": 0.00015,
-        "cost_per_1k_output": 0.0006,
-        "quality_score": 0.82,
-        "max_context": 128_000,
-        "avg_latency_ms": 120,
-    },
-    "o3": {
-        "provider": "openai",
-        "cost_per_1k_input": 0.010,
-        "cost_per_1k_output": 0.040,
-        "quality_score": 0.97,
-        "max_context": 200_000,
-        "avg_latency_ms": 800,
-    },
-    # ── Anthropic ──
     "claude-opus-4-6": {
         "provider": "anthropic",
         "cost_per_1k_input": 0.015,
@@ -53,14 +41,6 @@ DEFAULT_MODELS = {
         "quality_score": 0.97,
         "max_context": 200_000,
         "avg_latency_ms": 300,
-    },
-    "claude-sonnet-4-6": {
-        "provider": "anthropic",
-        "cost_per_1k_input": 0.003,
-        "cost_per_1k_output": 0.015,
-        "quality_score": 0.94,
-        "max_context": 200_000,
-        "avg_latency_ms": 180,
     },
     "claude-haiku-4-5": {
         "provider": "anthropic",
@@ -70,58 +50,59 @@ DEFAULT_MODELS = {
         "max_context": 200_000,
         "avg_latency_ms": 100,
     },
-    # ── Google ──
-    "gemini-2.5-pro": {
-        "provider": "google",
-        "cost_per_1k_input": 0.00125,
-        "cost_per_1k_output": 0.010,
-        "quality_score": 0.95,
-        "max_context": 1_000_000,
-        "avg_latency_ms": 400,
-    },
-    "gemini-2.5-flash": {
-        "provider": "google",
-        "cost_per_1k_input": 0.00015,
-        "cost_per_1k_output": 0.0006,
-        "quality_score": 0.85,
-        "max_context": 1_000_000,
-        "avg_latency_ms": 150,
-    },
-    # ── DeepSeek ──
-    "deepseek-chat": {
-        "provider": "deepseek",
-        "cost_per_1k_input": 0.00007,
-        "cost_per_1k_output": 0.0011,
-        "quality_score": 0.82,
-        "max_context": 64_000,
-        "avg_latency_ms": 250,
-    },
-    "deepseek-reasoner": {
-        "provider": "deepseek",
-        "cost_per_1k_input": 0.00055,
-        "cost_per_1k_output": 0.00219,
-        "quality_score": 0.90,
-        "max_context": 64_000,
-        "avg_latency_ms": 600,
-    },
-    # ── Mistral ──
-    "mistral-large-latest": {
-        "provider": "mistral",
-        "cost_per_1k_input": 0.002,
-        "cost_per_1k_output": 0.006,
-        "quality_score": 0.92,
-        "max_context": 128_000,
-        "avg_latency_ms": 300,
-    },
-    "codestral-latest": {
-        "provider": "mistral",
-        "cost_per_1k_input": 0.0003,
-        "cost_per_1k_output": 0.0009,
-        "quality_score": 0.86,
-        "max_context": 256_000,
-        "avg_latency_ms": 150,
-    },
 }
+
+_model_catalog: Optional[dict] = None
+_catalog_loaded: bool = False
+
+
+def _normalize_quality(yaml_score: float) -> float:
+    """Normalize YAML quality_score (3.0-5.0 scale) to 0.0-1.0."""
+    return round(max(0.0, min(1.0, (yaml_score - 3.0) / 2.0)), 4)
+
+
+def load_model_catalog(yaml_path: Optional[Path] = None) -> dict:
+    """Load model catalog from config/models.yaml, normalizing field names.
+
+    Field mapping:
+        cost_per_1k_input_tokens  → cost_per_1k_input
+        cost_per_1k_output_tokens → cost_per_1k_output
+        quality_score (3.0-5.0)   → quality_score (0.0-1.0)
+        max_input_tokens          → max_context
+    """
+    global _model_catalog, _catalog_loaded
+    path = yaml_path or _YAML_PATH
+
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        models_raw = raw.get("models", {})
+        catalog: dict = {}
+        for model_id, props in models_raw.items():
+            catalog[model_id] = {
+                "provider": props.get("provider", "unknown"),
+                "cost_per_1k_input": props.get("cost_per_1k_input_tokens", 0.01),
+                "cost_per_1k_output": props.get("cost_per_1k_output_tokens", 0.01),
+                "quality_score": _normalize_quality(props.get("quality_score", 3.5)),
+                "max_context": props.get("max_input_tokens", 4096),
+                "avg_latency_ms": props.get("avg_latency_ms", 500),
+            }
+        _model_catalog = catalog
+        _catalog_loaded = True
+        logger.info("Loaded %d models from %s", len(catalog), path)
+        return catalog
+    except Exception:
+        logger.warning("Failed to load models from %s — using fallback catalog", path, exc_info=True)
+        _model_catalog = dict(_FALLBACK_MODELS)
+        _catalog_loaded = True
+        return _model_catalog
+
+
+def get_model_catalog() -> dict:
+    """Return the loaded model catalog, loading from YAML on first call."""
+    global _model_catalog
+    if not _catalog_loaded:
+        return load_model_catalog()
+    return _model_catalog  # type: ignore[return-value]
 
 
 @dataclass
@@ -273,7 +254,7 @@ class RoutingEngine:
         models: Optional[dict] = None,
         aba_hook: Optional[ABAFeedbackHook] = None,
     ) -> None:
-        self._models = models or DEFAULT_MODELS
+        self._models = models or get_model_catalog()
         self._aba_hook = aba_hook
 
     def route(self, ctx: RoutingContext) -> RoutingDecision:
