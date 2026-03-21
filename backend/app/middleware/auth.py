@@ -293,10 +293,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     options={"verify_aud": False},
                 )
             else:
-                logger.error("JWKS not configured — rejecting JWT authentication")
-                return JSONResponse(
-                    {"error": {"code": "auth_unavailable", "message": "Authentication service not configured"}},
-                    status_code=503,
+                settings = get_settings()
+                if settings.environment == "production":
+                    logger.error(
+                        "JWKS not configured in production — rejecting JWT. "
+                        "Set CLERK_PUBLISHABLE_KEY or CLERK_JWKS_URL."
+                    )
+                    return JSONResponse(
+                        {"error": {"code": "auth_unavailable", "message": "Authentication service not configured"}},
+                        status_code=503,
+                    )
+                # Non-production: allow unsigned decode with loud warning
+                logger.warning(
+                    "JWKS not configured — decoding JWT WITHOUT signature verification. "
+                    "This is UNSAFE. Set CLERK_PUBLISHABLE_KEY or CLERK_JWKS_URL."
+                )
+                payload = jwt.decode(
+                    token,
+                    options={"verify_signature": False},
+                    algorithms=["RS256"],
                 )
         except jwt.PyJWTError as e:
             logger.warning("JWT verification failed: %s", e)
