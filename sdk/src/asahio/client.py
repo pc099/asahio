@@ -22,7 +22,7 @@ from asahio.resources.routing import AsyncRouting, Routing
 from asahio.resources.traces import AsyncTraces, Traces
 from asahio.types.chat import ChatCompletion
 
-_DEFAULT_BASE_URL = "https://api.asahio.dev"
+_DEFAULT_BASE_URL = "https://api.asahio.in"
 
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
