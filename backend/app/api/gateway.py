@@ -286,13 +286,13 @@ async def chat_completions(
     api_key_id = getattr(getattr(request.state, "api_key", None), "id", None)
     # Extract tool information for trace
     tools_requested = None
-    if req.tools:
-        tools_requested = {"tools": req.tools, "tool_choice": req.tool_choice}
+    if body.tools:
+        tools_requested = {"tools": body.tools, "tool_choice": body.tool_choice}
 
     # Extract MCP server names if provided
     mcp_servers_used = None
-    if req.mcp_servers:
-        mcp_servers_used = {"servers": [s.get("name") for s in req.mcp_servers if isinstance(s, dict)]}
+    if body.mcp_servers:
+        mcp_servers_used = {"servers": [s.get("name") for s in body.mcp_servers if isinstance(s, dict)]}
 
     trace_payload = TracePayload(
         org_id=org_id,
