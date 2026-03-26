@@ -328,10 +328,10 @@ async def chat_completions(
         tools_requested=tools_requested,
         tools_called=result.tools_called if hasattr(result, "tools_called") else None,
         tool_call_count=result.tool_call_count if hasattr(result, "tool_call_count") else 0,
-        web_search_enabled=req.enable_web_search,
+        web_search_enabled=body.enable_web_search,
         mcp_servers_used=mcp_servers_used,
-        computer_use_enabled=req.enable_computer_use,
-        chain_id=req.chain_id,
+        computer_use_enabled=body.enable_computer_use,
+        chain_id=body.chain_id,
     )
     asyncio.create_task(write_trace(trace_payload))
 
