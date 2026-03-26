@@ -82,8 +82,21 @@ class BaseClient:
         """POST returning a streaming response (caller must iterate)."""
         return self._request("POST", path, json=json, stream=True)
 
-    def get(self, path: str) -> httpx.Response:
-        return self._request("GET", path)
+    def get(self, path: str, *, params: Optional[dict[str, Any]] = None) -> httpx.Response:
+        """GET with optional query parameters."""
+        return self._request("GET", path, params=params)
+
+    def patch(self, path: str, *, json: dict[str, Any]) -> httpx.Response:
+        """PATCH with retries on transient errors."""
+        return self._request("PATCH", path, json=json)
+
+    def put(self, path: str, *, json: dict[str, Any]) -> httpx.Response:
+        """PUT with retries on transient errors."""
+        return self._request("PUT", path, json=json)
+
+    def delete(self, path: str) -> httpx.Response:
+        """DELETE with retries on transient errors."""
+        return self._request("DELETE", path)
 
     # ── internal ─────────────────────────────────
 
@@ -93,16 +106,17 @@ class BaseClient:
         path: str,
         *,
         json: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
         stream: bool = False,
     ) -> httpx.Response:
         last_exc: Optional[Exception] = None
         for attempt in range(self._max_retries + 1):
             try:
                 if stream:
-                    req = self._http.build_request(method, path, json=json)
+                    req = self._http.build_request(method, path, json=json, params=params)
                     response = self._http.send(req, stream=True)
                 else:
-                    response = self._http.request(method, path, json=json)
+                    response = self._http.request(method, path, json=json, params=params)
 
                 if response.status_code < 400:
                     return response
@@ -171,8 +185,21 @@ class AsyncBaseClient:
     async def post_stream(self, path: str, *, json: dict[str, Any]) -> httpx.Response:
         return await self._request("POST", path, json=json, stream=True)
 
-    async def get(self, path: str) -> httpx.Response:
-        return await self._request("GET", path)
+    async def get(self, path: str, *, params: Optional[dict[str, Any]] = None) -> httpx.Response:
+        """GET with optional query parameters."""
+        return await self._request("GET", path, params=params)
+
+    async def patch(self, path: str, *, json: dict[str, Any]) -> httpx.Response:
+        """PATCH with retries on transient errors."""
+        return await self._request("PATCH", path, json=json)
+
+    async def put(self, path: str, *, json: dict[str, Any]) -> httpx.Response:
+        """PUT with retries on transient errors."""
+        return await self._request("PUT", path, json=json)
+
+    async def delete(self, path: str) -> httpx.Response:
+        """DELETE with retries on transient errors."""
+        return await self._request("DELETE", path)
 
     # ── internal ─────────────────────────────────
 
@@ -182,6 +209,7 @@ class AsyncBaseClient:
         path: str,
         *,
         json: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
         stream: bool = False,
     ) -> httpx.Response:
         import anyio
@@ -190,10 +218,10 @@ class AsyncBaseClient:
         for attempt in range(self._max_retries + 1):
             try:
                 if stream:
-                    req = self._http.build_request(method, path, json=json)
+                    req = self._http.build_request(method, path, json=json, params=params)
                     response = await self._http.send(req, stream=True)
                 else:
-                    response = await self._http.request(method, path, json=json)
+                    response = await self._http.request(method, path, json=json, params=params)
 
                 if response.status_code < 400:
                     return response

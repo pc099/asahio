@@ -8,6 +8,18 @@ from typing import Any, Optional, Union, overload
 from asahio._base_client import AsyncBaseClient, BaseClient
 from asahio._exceptions import AsahioError
 from asahio._streaming import AsyncStream, Stream
+from asahio.resources.aba import ABA, AsyncABA
+from asahio.resources.agents import Agents, AsyncAgents
+from asahio.resources.analytics import Analytics, AsyncAnalytics
+from asahio.resources.billing import Billing, AsyncBilling
+from asahio.resources.chains import AsyncChains, Chains
+from asahio.resources.health import AsyncHealth, Health
+from asahio.resources.interventions import AsyncInterventions, Interventions
+from asahio.resources.models import AsyncModels, Models
+from asahio.resources.ollama import AsyncOllama, Ollama
+from asahio.resources.provider_keys import AsyncProviderKeys, ProviderKeys
+from asahio.resources.routing import AsyncRouting, Routing
+from asahio.resources.traces import AsyncTraces, Traces
 from asahio.types.chat import ChatCompletion
 
 _DEFAULT_BASE_URL = "https://api.asahio.dev"
@@ -39,6 +51,14 @@ def _build_body(
     agent_id: Optional[str],
     session_id: Optional[str],
     model_endpoint_id: Optional[str],
+    chain_id: Optional[str],
+    tools: Optional[list[dict]],
+    tool_choice: Optional[Union[str, dict]],
+    enable_web_search: bool,
+    web_search_config: Optional[dict],
+    mcp_servers: Optional[list[dict]],
+    enable_computer_use: bool,
+    computer_use_config: Optional[dict],
     extra: dict[str, Any],
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
@@ -57,6 +77,22 @@ def _build_body(
         body["session_id"] = session_id
     if model_endpoint_id is not None:
         body["model_endpoint_id"] = model_endpoint_id
+    if chain_id is not None:
+        body["chain_id"] = chain_id
+    if tools is not None:
+        body["tools"] = tools
+    if tool_choice is not None:
+        body["tool_choice"] = tool_choice
+    if enable_web_search:
+        body["enable_web_search"] = True
+        if web_search_config is not None:
+            body["web_search_config"] = web_search_config
+    if mcp_servers is not None:
+        body["mcp_servers"] = mcp_servers
+    if enable_computer_use:
+        body["enable_computer_use"] = True
+        if computer_use_config is not None:
+            body["computer_use_config"] = computer_use_config
     return body
 
 
@@ -78,6 +114,14 @@ class Completions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> ChatCompletion: ...
 
@@ -95,6 +139,14 @@ class Completions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, Stream]: ...
 
@@ -111,6 +163,14 @@ class Completions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, Stream]:
         body = _build_body(
@@ -124,6 +184,14 @@ class Completions:
             agent_id=agent_id,
             session_id=session_id,
             model_endpoint_id=model_endpoint_id,
+            chain_id=chain_id,
+            tools=tools,
+            tool_choice=tool_choice,
+            enable_web_search=enable_web_search,
+            web_search_config=web_search_config,
+            mcp_servers=mcp_servers,
+            enable_computer_use=enable_computer_use,
+            computer_use_config=computer_use_config,
             extra=kwargs,
         )
         if stream:
@@ -156,7 +224,22 @@ class Asahio:
             max_retries=max_retries,
             org_slug=org_slug,
         )
+        # Gateway
         self.chat = Chat(self._client)
+
+        # Resources
+        self.agents = Agents(self._client)
+        self.aba = ABA(self._client)
+        self.chains = Chains(self._client)
+        self.provider_keys = ProviderKeys(self._client)
+        self.ollama = Ollama(self._client)
+        self.routing = Routing(self._client)
+        self.traces = Traces(self._client)
+        self.interventions = Interventions(self._client)
+        self.analytics = Analytics(self._client)
+        self.billing = Billing(self._client)
+        self.models = Models(self._client)
+        self.health = Health(self._client)
 
     def close(self) -> None:
         self._client.close()
@@ -186,6 +269,14 @@ class AsyncCompletions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> ChatCompletion: ...
 
@@ -203,6 +294,14 @@ class AsyncCompletions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, AsyncStream]: ...
 
@@ -219,6 +318,14 @@ class AsyncCompletions:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
         model_endpoint_id: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[Union[str, dict]] = None,
+        enable_web_search: bool = False,
+        web_search_config: Optional[dict] = None,
+        mcp_servers: Optional[list[dict]] = None,
+        enable_computer_use: bool = False,
+        computer_use_config: Optional[dict] = None,
         **kwargs: Any,
     ) -> Union[ChatCompletion, AsyncStream]:
         body = _build_body(
@@ -232,6 +339,14 @@ class AsyncCompletions:
             agent_id=agent_id,
             session_id=session_id,
             model_endpoint_id=model_endpoint_id,
+            chain_id=chain_id,
+            tools=tools,
+            tool_choice=tool_choice,
+            enable_web_search=enable_web_search,
+            web_search_config=web_search_config,
+            mcp_servers=mcp_servers,
+            enable_computer_use=enable_computer_use,
+            computer_use_config=computer_use_config,
             extra=kwargs,
         )
         if stream:
@@ -264,7 +379,22 @@ class AsyncAsahio:
             max_retries=max_retries,
             org_slug=org_slug,
         )
+        # Gateway
         self.chat = AsyncChat(self._client)
+
+        # Resources
+        self.agents = AsyncAgents(self._client)
+        self.aba = AsyncABA(self._client)
+        self.chains = AsyncChains(self._client)
+        self.provider_keys = AsyncProviderKeys(self._client)
+        self.ollama = AsyncOllama(self._client)
+        self.routing = AsyncRouting(self._client)
+        self.traces = AsyncTraces(self._client)
+        self.interventions = AsyncInterventions(self._client)
+        self.analytics = AsyncAnalytics(self._client)
+        self.billing = AsyncBilling(self._client)
+        self.models = AsyncModels(self._client)
+        self.health = AsyncHealth(self._client)
 
     async def close(self) -> None:
         await self._client.close()

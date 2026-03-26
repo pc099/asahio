@@ -571,6 +571,18 @@ class CallTrace(Base):
     intervention_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     hallucination_tag: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     hallucination_tag_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # SDK v2 tool support fields
+    tools_requested: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    tools_called: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    tool_call_count: Mapped[int] = mapped_column(Integer, default=0)
+    web_search_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mcp_servers_used: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    computer_use_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    chain_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("guided_chains.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -108,6 +108,9 @@ class GatewayResult:
     risk_factors: dict = field(default_factory=dict)
     intervention_level: Optional[int] = None
     error_message: Optional[str] = None
+    # SDK v2 tool support
+    tools_called: Optional[dict] = None
+    tool_call_count: int = 0
 
 
 def normalize_routing_mode(value: Optional[str]) -> str:

@@ -51,6 +51,15 @@ class TracePayload:
     error_message: Optional[str] = None
     trace_metadata: Optional[dict] = None
 
+    # SDK v2 tool support
+    tools_requested: Optional[dict] = None
+    tools_called: Optional[dict] = None
+    tool_call_count: int = 0
+    web_search_enabled: bool = False
+    mcp_servers_used: Optional[dict] = None
+    computer_use_enabled: bool = False
+    chain_id: Optional[str] = None
+
 
 def _to_uuid(value: Optional[str]) -> Optional[uuid.UUID]:
     """Convert a string to UUID, returning None if invalid or empty."""
@@ -80,6 +89,9 @@ async def write_trace(payload: TracePayload) -> None:
             if payload.risk_factors:
                 meta["risk_factors"] = payload.risk_factors
 
+            # Convert chain_id to UUID
+            chain_uuid = _to_uuid(payload.chain_id)
+
             # 1. Write CallTrace
             call_trace = CallTrace(
                 organisation_id=org_uuid,
@@ -101,6 +113,14 @@ async def write_trace(payload: TracePayload) -> None:
                 risk_score=payload.risk_score,
                 intervention_level=payload.intervention_level,
                 trace_metadata=meta,
+                # SDK v2 tool support
+                tools_requested=payload.tools_requested,
+                tools_called=payload.tools_called,
+                tool_call_count=payload.tool_call_count,
+                web_search_enabled=payload.web_search_enabled,
+                mcp_servers_used=payload.mcp_servers_used,
+                computer_use_enabled=payload.computer_use_enabled,
+                chain_id=chain_uuid,
             )
             session.add(call_trace)
             await session.flush()

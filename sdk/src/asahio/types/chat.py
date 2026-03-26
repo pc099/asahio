@@ -31,6 +31,11 @@ class AsahioMetadata:
     policy_action: Optional[str] = None
     policy_reason: Optional[str] = None
     request_id: Optional[str] = None
+    risk_score: Optional[float] = None
+    risk_factors: dict = field(default_factory=dict)
+    intervention_level: Optional[int] = None
+    tools_requested: Optional[list[str]] = None
+    tools_called: Optional[list[str]] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "AsahioMetadata":
@@ -56,6 +61,11 @@ class AsahioMetadata:
             policy_action=data.get("policy_action"),
             policy_reason=data.get("policy_reason"),
             request_id=data.get("request_id"),
+            risk_score=(float(data["risk_score"]) if data.get("risk_score") is not None else None),
+            risk_factors=data.get("risk_factors") or {},
+            intervention_level=data.get("intervention_level"),
+            tools_requested=data.get("tools_requested"),
+            tools_called=data.get("tools_called"),
         )
 
     @property
@@ -74,6 +84,8 @@ AsahiMetadata = AsahioMetadata
 class Message:
     role: str
     content: str
+    tool_calls: Optional[list[dict]] = None
+    tool_call_id: Optional[str] = None
 
 
 @dataclass

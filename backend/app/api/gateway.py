@@ -41,6 +41,15 @@ class ChatCompletionRequest(BaseModel):
     model_endpoint_id: str | None = None
     chain_id: str | None = None
 
+    # SDK v2 agentic parameters
+    tools: list[dict] | None = None
+    tool_choice: str | dict | None = None
+    enable_web_search: bool = False
+    web_search_config: dict | None = None
+    mcp_servers: list[dict] | None = None
+    enable_computer_use: bool = False
+    computer_use_config: dict | None = None
+
 
 async def _resolve_agent(db: AsyncSession, org_id: str, agent_id: str | None) -> Agent | None:
     if not agent_id:
@@ -275,6 +284,16 @@ async def chat_completions(
 
     # Fire background trace persistence — never blocks the response
     api_key_id = getattr(getattr(request.state, "api_key", None), "id", None)
+    # Extract tool information for trace
+    tools_requested = None
+    if req.tools:
+        tools_requested = {"tools": req.tools, "tool_choice": req.tool_choice}
+
+    # Extract MCP server names if provided
+    mcp_servers_used = None
+    if req.mcp_servers:
+        mcp_servers_used = {"servers": [s.get("name") for s in req.mcp_servers if isinstance(s, dict)]}
+
     trace_payload = TracePayload(
         org_id=org_id,
         agent_id=str(agent.id) if agent else None,
@@ -305,6 +324,14 @@ async def chat_completions(
         intervention_level=result.intervention_level,
         risk_factors=result.risk_factors,
         error_message=result.error_message,
+        # SDK v2 tool support
+        tools_requested=tools_requested,
+        tools_called=result.tools_called if hasattr(result, "tools_called") else None,
+        tool_call_count=result.tool_call_count if hasattr(result, "tool_call_count") else 0,
+        web_search_enabled=req.enable_web_search,
+        mcp_servers_used=mcp_servers_used,
+        computer_use_enabled=req.enable_computer_use,
+        chain_id=req.chain_id,
     )
     asyncio.create_task(write_trace(trace_payload))
 

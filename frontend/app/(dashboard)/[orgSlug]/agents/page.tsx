@@ -175,18 +175,54 @@ export default function AgentsPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">Loading agents...</div>
-      ) : agents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
-          <Bot className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">No agents configured yet.</p>
+      ) : agents.length === 0 && !showCreate ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 p-12 text-center">
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-asahio/10">
+            <Bot className="h-8 w-8 text-asahio" />
+          </div>
+          <h3 className="mb-2 text-lg font-semibold text-foreground">No agents yet</h3>
+          <p className="mb-6 max-w-md text-sm text-muted-foreground">
+            Agents track calls, modes, and behavioral patterns. Create your first agent to start routing LLM traffic through ASAHIO.
+          </p>
+
+          <div className="mb-6 w-full max-w-xl rounded-lg border border-border bg-card overflow-hidden">
+            <div className="border-b border-border bg-muted/50 px-4 py-2 text-left">
+              <span className="text-xs font-medium text-muted-foreground">python</span>
+            </div>
+            <pre className="overflow-x-auto p-4 text-left">
+              <code className="text-xs font-mono text-foreground">{`from asahio import AsahioClient
+
+client = AsahioClient(api_key="your-key")
+
+# Create an agent via SDK
+agent = client.agents.create(
+    name="My Agent",
+    routing_mode="AUTO",
+    intervention_mode="ASSISTED"
+)
+
+# Use it in requests
+resp = client.chat.completions.create(
+    messages=[{"role": "user", "content": "Hello"}],
+    agent_id=agent.id
+)`}</code>
+            </pre>
+          </div>
+
           <button
             onClick={() => setShowCreate(true)}
-            className="mt-2 text-sm font-medium text-asahio hover:underline"
+            className="rounded-lg bg-asahio px-6 py-2.5 text-sm font-medium text-white hover:bg-asahio-dark transition-colors"
           >
-            Create your first agent
+            Create Your First Agent
           </button>
+          <a
+            href="/docs"
+            className="mt-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            View documentation →
+          </a>
         </div>
-      ) : (
+      ) : agents.length === 0 ? null : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border bg-muted/50">
