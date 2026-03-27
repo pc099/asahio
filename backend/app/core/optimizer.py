@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from app.services.circuit_breaker import (
     CircuitBreaker,
