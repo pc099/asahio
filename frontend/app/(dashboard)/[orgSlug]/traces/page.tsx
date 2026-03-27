@@ -373,13 +373,13 @@ export default function TracesPage() {
   );
 }
 
-function HallucinationTagButton({ traceId, orgSlug }: { traceId: string; orgSlug: string }) {
+function HallucinationTagButton({ callTraceId, orgSlug }: { callTraceId: string; orgSlug: string }) {
   const queryClient = useQueryClient();
   const [tagged, setTagged] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (detected: boolean) =>
-      tagHallucination(traceId, { hallucination_detected: detected }, undefined, orgSlug),
+      tagHallucination(callTraceId, { hallucination_detected: detected }, undefined, orgSlug),
     onSuccess: (data) => {
       setTagged(data.hallucination_detected);
       queryClient.invalidateQueries({ queryKey: ["traces"] });
@@ -714,7 +714,14 @@ function TraceRow({
               </div>
             )}
             <div className="mt-4 border-t border-border/50 pt-3 flex items-center gap-3">
-              <HallucinationTagButton traceId={log.id} orgSlug={orgSlug} />
+              {log.call_trace_id && log.agent_id ? (
+                <HallucinationTagButton callTraceId={log.call_trace_id} orgSlug={orgSlug} />
+              ) : (
+                <span className="text-xs text-muted-foreground" title="Hallucination tagging requires an agent-linked trace">
+                  <AlertTriangle className="inline h-3 w-3 mr-1" />
+                  No agent linked
+                </span>
+              )}
             </div>
           </td>
         </tr>

@@ -63,7 +63,7 @@ export function OnboardingWizard({ onComplete, onDismiss }: OnboardingWizardProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-3xl mx-4 rounded-xl border border-border bg-card shadow-2xl animate-fade-in">
+      <div className="relative w-full max-w-3xl max-h-[90vh] mx-4 rounded-xl border border-border bg-card shadow-2xl animate-fade-in flex flex-col">
         {/* Close button */}
         <button
           onClick={onDismiss}
@@ -73,7 +73,7 @@ export function OnboardingWizard({ onComplete, onDismiss }: OnboardingWizardProp
         </button>
 
         {/* Progress bar */}
-        <div className="border-b border-border bg-muted/30 px-8 py-4">
+        <div className="border-b border-border bg-muted/30 px-8 py-4 shrink-0">
           <div className="flex items-center justify-between mb-3">
             {STEPS.map((s, idx) => (
               <div key={s.id} className="flex items-center">
@@ -107,7 +107,7 @@ export function OnboardingWizard({ onComplete, onDismiss }: OnboardingWizardProp
         </div>
 
         {/* Content */}
-        <div className="p-8">
+        <div className="p-8 overflow-y-auto flex-1 min-h-0">
           <div className="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-asahio/10">
             <step.icon className="h-6 w-6 text-asahio" />
           </div>
@@ -234,7 +234,7 @@ print(f"Risk score: {meta.risk_score}")`}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-8 py-4">
+        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-8 py-4 shrink-0">
           <button
             onClick={prevStep}
             disabled={currentStep === 0}

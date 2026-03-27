@@ -42,6 +42,8 @@ export interface ModelBreakdown {
 
 export interface RequestLogEntry {
   id: string;
+  call_trace_id: string | null;
+  agent_id: string | null;
   model_requested: string | null;
   model_used: string;
   request_id?: string | null;
@@ -977,6 +979,7 @@ export interface ModeEligibility {
 
 export interface ModeTransitionEntry {
   id: string;
+  agent_id: string | null;
   previous_mode: string;
   new_mode: string;
   trigger: string;
@@ -1182,6 +1185,7 @@ export interface SessionItem {
   started_at: string | null;
   last_seen_at: string | null;
   trace_count: number;
+  stats?: { total_traces: number; cache_hits: number; avg_latency_ms: number | null } | null;
 }
 
 export interface SessionGraphStep {

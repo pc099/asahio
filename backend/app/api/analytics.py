@@ -405,6 +405,8 @@ async def analytics_requests(
 
         data.append({
             "id": str(log.id),
+            "call_trace_id": str(trace.id) if trace else None,
+            "agent_id": str(trace.agent_id) if trace and trace.agent_id else None,
             "model_requested": log.model_requested,
             "model_used": log.model_used,
             "provider": log.provider,
