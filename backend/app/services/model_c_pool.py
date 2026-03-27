@@ -86,8 +86,45 @@ class ModelCPool:
         if self._index is not None:
             # Production: upsert to Pinecone
             try:
-                # TODO: Pinecone vector upsert with behavioral embedding
-                pass
+                from app.services.fingerprint_embedder import embed_fingerprint
+                import uuid as uuid_module
+
+                # Embed the fingerprint as a vector
+                vector = await embed_fingerprint(
+                    agent_type=record.agent_type,
+                    complexity_bucket=record.complexity_bucket,
+                    output_type=record.output_type,
+                    model_used=record.model_used,
+                    hallucination_detected=record.hallucination_detected,
+                    cache_hit=record.cache_hit,
+                    latency_ms=record.latency_ms,
+                )
+
+                if vector is None:
+                    logger.warning("Model C: failed to embed fingerprint, skipping upsert")
+                    return False
+
+                # Upsert to Pinecone with anonymized metadata
+                vector_id = f"{record.agent_type}-{record.complexity_bucket:.1f}-{uuid_module.uuid4()}"
+                self._index.upsert(vectors=[{
+                    "id": vector_id,
+                    "values": vector,
+                    "metadata": {
+                        "agent_type": record.agent_type,
+                        "complexity": record.complexity_bucket,
+                        "output_type": record.output_type,
+                        "model": record.model_used,
+                        "hallucination": record.hallucination_detected,
+                        "cache_hit": record.cache_hit,
+                        "latency_ms": record.latency_ms or 0,
+                    }
+                }])
+
+                logger.debug(
+                    "Model C: upserted vector %s to Pinecone",
+                    vector_id[:16],
+                )
+
             except Exception:
                 logger.exception("Model C: Pinecone upsert failed")
                 return False
@@ -114,8 +151,66 @@ class ModelCPool:
 
         if self._index is not None:
             # Production: query Pinecone
-            # TODO: vector similarity search
-            pass
+            try:
+                from app.services.fingerprint_embedder import embed_fingerprint_query
+
+                # Embed the query
+                query_vector = await embed_fingerprint_query(agent_type, bucket)
+                if query_vector is None:
+                    logger.warning("Model C: failed to embed query, falling back to in-memory")
+                else:
+                    # Query Pinecone for similar fingerprints
+                    results = self._index.query(
+                        vector=query_vector,
+                        top_k=100,
+                        include_metadata=True,
+                    )
+
+                    if results and results.get("matches"):
+                        matches = results["matches"]
+                        logger.debug(
+                            "Model C: found %d similar fingerprints for type=%s bucket=%.1f",
+                            len(matches), agent_type, bucket,
+                        )
+
+                        # Aggregate statistics from matches
+                        hallucination_count = sum(
+                            1 for m in matches
+                            if m.get("metadata", {}).get("hallucination", False)
+                        )
+                        risk_score = hallucination_count / len(matches) if matches else 0.5
+
+                        # Find best performing model
+                        model_stats: dict[str, dict] = {}
+                        for m in matches:
+                            meta = m.get("metadata", {})
+                            model = meta.get("model", "unknown")
+                            hallucinated = meta.get("hallucination", False)
+
+                            stats = model_stats.setdefault(model, {"total": 0, "hallucinations": 0})
+                            stats["total"] += 1
+                            if hallucinated:
+                                stats["hallucinations"] += 1
+
+                        recommended = None
+                        best_rate = 1.0
+                        for model, stats in model_stats.items():
+                            rate = stats["hallucinations"] / stats["total"] if stats["total"] > 0 else 1.0
+                            if rate < best_rate and stats["total"] >= 3:
+                                best_rate = rate
+                                recommended = model
+
+                        confidence = min(1.0, len(matches) / 100)
+
+                        return RiskPrior(
+                            risk_score=round(risk_score, 4),
+                            observation_count=len(matches),
+                            confidence=round(confidence, 4),
+                            recommended_model=recommended,
+                        )
+
+            except Exception:
+                logger.exception("Model C: Pinecone query failed, falling back to in-memory")
 
         # In-memory fallback
         key = (agent_type, bucket)

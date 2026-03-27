@@ -257,8 +257,11 @@ async def get_risk_prior(
     """Query the Model C global pool for a risk prior."""
     await _get_org_id(request)  # auth check
     from app.services.model_c_pool import ModelCPool
+    from app.services.pinecone_provisioner import get_model_c_index
 
-    pool = ModelCPool()
+    # Get the Model C Pinecone index (or None if not available)
+    model_c_index = get_model_c_index()
+    pool = ModelCPool(pinecone_index=model_c_index)
     prior = await pool.query_risk_prior(agent_type, complexity_bucket)
     return RiskPriorResponse(
         risk_score=prior.risk_score,

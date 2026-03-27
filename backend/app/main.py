@@ -159,6 +159,18 @@ async def lifespan(app: FastAPI):
                 )
         except Exception:
             logger.warning("Pinecone connectivity check failed — semantic cache disabled")
+
+        # Ensure Model C index exists (master behavioral pattern store)
+        try:
+            from app.services.pinecone_provisioner import ensure_model_c_index_exists
+
+            model_c_ready = await ensure_model_c_index_exists()
+            if model_c_ready:
+                logger.info("Model C (ABA) index ready — behavioral pattern learning enabled")
+            else:
+                logger.warning("Model C index not available — ABA learning disabled")
+        except Exception:
+            logger.warning("Model C index check failed — ABA learning disabled")
     except Exception:
         logger.warning("Redis not available - rate limiting and caching disabled")
         app.state.redis = None
