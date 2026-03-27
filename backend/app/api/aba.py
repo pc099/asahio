@@ -449,14 +449,16 @@ async def tag_hallucination(
             )
 
         # Create a new StructuralRecord
+        from app.db.models import AgentTypeClassification, OutputTypeClassification
+
         record = StructuralRecord(
             organisation_id=org_id,
             agent_id=trace.agent_id,
             call_trace_id=call_uuid,
             hallucination_detected=body.hallucination_detected,
-            complexity_score=0.5,  # Default placeholder
-            agent_type="unknown",
-            output_type="text",
+            query_complexity_score=0.5,  # Fixed: was complexity_score
+            agent_type_classification=AgentTypeClassification.CHATBOT,  # Fixed: was agent_type="unknown"
+            output_type_classification=OutputTypeClassification.CONVERSATIONAL,  # Fixed: was output_type="text"
             token_count=trace.input_tokens + trace.output_tokens,
             latency_ms=trace.latency_ms or 0,
             model_used=trace.model_used or "unknown",
