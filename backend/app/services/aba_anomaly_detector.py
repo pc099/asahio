@@ -88,7 +88,7 @@ class ABAAnomalyDetector:
 
     def _check_hallucination_spike(self, fp) -> Optional[AnomalySignal]:
         """Detect hallucination rate exceeding safe baseline."""
-        rate = fp.hallucination_rate
+        rate = float(fp.hallucination_rate) if fp.hallucination_rate is not None else 0.0
         # Baseline: low hallucination rate expected (<10%)
         baseline = 0.1
         if rate <= baseline:
@@ -109,7 +109,7 @@ class ABAAnomalyDetector:
 
     def _check_complexity_shift(self, fp) -> Optional[AnomalySignal]:
         """Detect avg_complexity shifting significantly from expected range."""
-        current = fp.avg_complexity
+        current = float(fp.avg_complexity) if fp.avg_complexity is not None else 0.5
         # Baseline: expected mid-range complexity (0.5)
         baseline = 0.5
         deviation = abs(current - baseline) / max(baseline, 0.01)
@@ -171,7 +171,7 @@ class ABAAnomalyDetector:
 
     def _check_cache_degradation(self, fp) -> Optional[AnomalySignal]:
         """Detect cache hit rate dropping below expected level."""
-        rate = fp.cache_hit_rate
+        rate = float(fp.cache_hit_rate) if fp.cache_hit_rate is not None else 0.0
         # Baseline: expect moderate cache usage (30%)
         baseline = 0.3
         if rate >= baseline:

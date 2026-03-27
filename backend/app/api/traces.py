@@ -10,13 +10,16 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+import jwt
+from jwt import PyJWKClient
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.engine import get_db
-from app.db.models import AgentSession, ApiKey, CallTrace, RoutingDecisionLog
+from app.db.models import AgentSession, ApiKey, CallTrace, Member, Organisation, RoutingDecisionLog, User
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +344,91 @@ async def get_session_graph(
     }
 
 
+# ── JWT Validation for SSE (Clerk tokens) ────────────────────────────────
+
+# Cached JWKS client for JWT signature verification
+_jwks_client: PyJWKClient | None = None
+
+
+def _get_jwks_client() -> PyJWKClient | None:
+    """Lazily initialise the JWKS client from Clerk's issuer URL."""
+    global _jwks_client
+    if _jwks_client is not None:
+        return _jwks_client
+    settings = get_settings()
+    jwks_url = settings.clerk_jwks_url
+    if not jwks_url:
+        pk = settings.clerk_publishable_key
+        if pk:
+            import base64
+            try:
+                encoded = pk.split("_", 2)[-1]
+                padded = encoded + "=" * (-len(encoded) % 4)
+                domain = base64.b64decode(padded).decode("utf-8").rstrip("$")
+                jwks_url = f"https://{domain}/.well-known/jwks.json"
+            except Exception:
+                logger.warning("Could not derive JWKS URL from publishable key")
+                return None
+        else:
+            return None
+    _jwks_client = PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
+    logger.info("JWKS client initialised: %s", jwks_url)
+    return _jwks_client
+
+
+async def _validate_jwt_for_sse(token: str, db: AsyncSession) -> Optional[uuid.UUID]:
+    """Validate a Clerk JWT token and return the org_id if valid.
+
+    Returns None if token is invalid or user/org not found.
+    """
+    try:
+        jwks = _get_jwks_client()
+        if jwks:
+            signing_key = jwks.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                options={"verify_aud": False},
+            )
+        else:
+            settings = get_settings()
+            if settings.environment == "production":
+                logger.error("JWKS not configured in production — rejecting JWT")
+                return None
+            logger.warning("JWKS not configured — decoding JWT WITHOUT signature verification")
+            payload = jwt.decode(
+                token,
+                options={"verify_signature": False},
+                algorithms=["RS256"],
+            )
+    except jwt.PyJWTError as e:
+        logger.warning("JWT verification failed: %s", e)
+        return None
+
+    clerk_user_id = payload.get("sub")
+    if not clerk_user_id:
+        return None
+
+    # Look up user by Clerk ID
+    result = await db.execute(
+        select(User).where(User.clerk_user_id == clerk_user_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return None
+
+    # Get first org the user belongs to
+    member_result = await db.execute(
+        select(Member).where(Member.user_id == user.id).limit(1)
+    )
+    member = member_result.scalar_one_or_none()
+    if not member:
+        return None
+
+    return member.organisation_id
+
+
 # ── SSE Live Trace Stream ────────────────────────────────────────────────
 
 
@@ -356,22 +444,28 @@ async def live_traces(
     Clients connect via EventSource. Each event is a JSON-serialized trace.
     Optional agent_id filter to only receive traces for a specific agent.
     Optional token query param for EventSource clients (which can't send headers).
+    Supports both API keys (asahio_* prefix) and Clerk JWT tokens.
     """
     # Try to get org_id from request.state (set by AuthMiddleware)
     org_id = getattr(request.state, "org_id", None)
 
     # If no org_id from middleware, try the token query param
     if not org_id and token:
-        key_hash = hashlib.sha256(token.encode()).hexdigest()
-        result = await db.execute(
-            select(ApiKey).where(
-                ApiKey.key_hash == key_hash,
-                ApiKey.is_active.is_(True),
+        # Try API key first
+        if token.startswith("asahio_") or token.startswith("asahi_"):
+            key_hash = hashlib.sha256(token.encode()).hexdigest()
+            result = await db.execute(
+                select(ApiKey).where(
+                    ApiKey.key_hash == key_hash,
+                    ApiKey.is_active.is_(True),
+                )
             )
-        )
-        api_key = result.scalar_one_or_none()
-        if api_key:
-            org_id = api_key.organisation_id
+            api_key = result.scalar_one_or_none()
+            if api_key:
+                org_id = api_key.organisation_id
+        # Try JWT token if API key validation failed
+        elif token.startswith("ey"):
+            org_id = await _validate_jwt_for_sse(token, db)
 
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context required")
