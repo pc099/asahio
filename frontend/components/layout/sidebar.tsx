@@ -19,6 +19,7 @@ import {
   Settings,
   Shield,
   ShieldAlert,
+  Trophy,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { icon: Database, label: "Cache", path: "/cache" },
   { icon: Activity, label: "Traces", path: "/traces" },
   { icon: BarChart2, label: "Analytics", path: "/analytics" },
+  { icon: Trophy, label: "Leaderboard", path: "/leaderboard" },
   { icon: Brain, label: "ABA", path: "/aba" },
   { icon: Radar, label: "Fleet", path: "/fleet" },
   { icon: ShieldAlert, label: "Interventions", path: "/interventions" },

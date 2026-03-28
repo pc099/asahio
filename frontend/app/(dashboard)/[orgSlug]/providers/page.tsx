@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/api";
-import { Activity, AlertTriangle, CheckCircle, XCircle, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle, XCircle, RefreshCw, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CircuitBreakerInfo {
@@ -17,6 +17,8 @@ interface ProviderHealth {
   health: "healthy" | "degraded" | "unreachable";
   circuit_breaker: CircuitBreakerInfo;
   timestamp: string;
+  gateway_routed?: boolean;
+  is_gateway?: boolean;
 }
 
 interface ProviderHealthResponse {
@@ -25,6 +27,8 @@ interface ProviderHealthResponse {
   healthy_count: number;
   degraded_count: number;
   unreachable_count: number;
+  gateway_enabled?: boolean;
+  gateway_url?: string | null;
 }
 
 function CircuitStateTag({ state }: { state: string }) {
@@ -190,6 +194,27 @@ export default function ProvidersPage() {
         </div>
       </div>
 
+      {/* Vercel AI Gateway Banner */}
+      {data?.gateway_enabled && (
+        <div className="flex items-center gap-3 rounded-lg border border-asahio/30 bg-asahio/5 p-4">
+          <Globe className="h-5 w-5 text-asahio flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-foreground">
+              Vercel AI Gateway Active
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              All provider calls are routed through the Vercel AI Gateway.
+              {data.gateway_url && (
+                <span className="ml-1 font-mono text-asahio/80">{data.gateway_url}</span>
+              )}
+            </p>
+          </div>
+          <span className="rounded-full bg-asahio/20 px-2.5 py-0.5 text-xs font-medium text-asahio">
+            Enabled
+          </span>
+        </div>
+      )}
+
       {/* Provider Cards */}
       {providers.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12">
@@ -212,7 +237,21 @@ export default function ProvidersPage() {
                     Updated {new Date(provider.timestamp).toLocaleTimeString()}
                   </p>
                 </div>
-                <HealthBadge health={provider.health} />
+                <div className="flex items-center gap-2">
+                  {provider.gateway_routed && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-asahio/10 border border-asahio/30 px-2 py-0.5 text-[10px] font-medium text-asahio">
+                      <Globe className="h-3 w-3" />
+                      Gateway
+                    </span>
+                  )}
+                  {provider.is_gateway && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 text-[10px] font-medium text-purple-400">
+                      <Globe className="h-3 w-3" />
+                      Vercel Gateway
+                    </span>
+                  )}
+                  <HealthBadge health={provider.health} />
+                </div>
               </div>
 
               <div className="space-y-3">

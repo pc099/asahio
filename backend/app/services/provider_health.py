@@ -41,6 +41,24 @@ _PROVIDERS = {
 }
 
 
+def _maybe_add_vercel_gateway() -> None:
+    """Register Vercel Gateway in the health check if USE_VERCEL_GATEWAY is enabled."""
+    if os.environ.get("USE_VERCEL_GATEWAY", "").lower() in ("true", "1", "yes"):
+        gateway_url = os.environ.get(
+            "VERCEL_GATEWAY_URL", "https://gateway.ai.vercel.app/v1"
+        )
+        # Strip /v1 suffix for base health check
+        base = gateway_url.replace("/v1", "").rstrip("/")
+        _PROVIDERS["vercel_gateway"] = {
+            "env_key": "VERCEL_API_TOKEN",
+            "base_url": base,
+        }
+        logger.info("Vercel Gateway added to health poller: %s", base)
+
+
+_maybe_add_vercel_gateway()
+
+
 def get_provider_health(provider: str) -> str:
     """Get the current health status of a provider.
 
@@ -86,16 +104,19 @@ async def _check_provider(provider: str, config: dict) -> ProviderStatus:
         async with httpx.AsyncClient(timeout=5.0) as client:
             # Just check if the base URL is reachable (HEAD request)
             headers = {}
-            if provider == "openai":
+            if provider in ("openai", "vercel_gateway"):
                 headers["Authorization"] = f"Bearer {api_key}"
             elif provider == "anthropic":
                 headers["x-api-key"] = api_key
                 headers["anthropic-version"] = "2023-06-01"
 
-            response = await client.get(
-                f"{config['base_url']}/v1/models" if provider == "openai" else config["base_url"],
-                headers=headers,
-            )
+            if provider == "openai":
+                check_url = f"{config['base_url']}/v1/models"
+            elif provider == "vercel_gateway":
+                check_url = f"{config['base_url']}/v1/models"
+            else:
+                check_url = config["base_url"]
+            response = await client.get(check_url, headers=headers)
             if response.status_code < 500:
                 return ProviderStatus(
                     provider=provider,

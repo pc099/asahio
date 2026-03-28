@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     stripe_webhook_secret: Optional[str] = None
     stripe_pro_price_id: Optional[str] = None
 
+    # Vercel AI Gateway — feature-flagged provider proxy
+    use_vercel_gateway: bool = False
+    vercel_api_token: Optional[str] = None
+    vercel_gateway_url: str = "https://gateway.ai.vercel.app/v1"
+
     # Pinecone (semantic cache vector store)
     pinecone_api_key: Optional[str] = None
     pinecone_index_name: str = "asahio-semantic-cache"

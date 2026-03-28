@@ -50,6 +50,8 @@ __all__ = [
     "register_ollama",
     # Key resolver
     "EnvKeyResolver",
+    # Vercel AI Gateway
+    "is_vercel_gateway_enabled",
 ]
 
 
@@ -64,12 +66,65 @@ PROVIDER_REGISTRY: dict[str, ProviderAdapter] = {
 }
 
 
+# ── Vercel AI Gateway (feature-flagged) ───────────────────────────────
+
+_vercel_registry: dict[str, ProviderAdapter] = {}
+_vercel_enabled: bool = False
+
+
+def _init_vercel_gateway() -> None:
+    """Initialise Vercel Gateway adapters if USE_VERCEL_GATEWAY is enabled."""
+    global _vercel_registry, _vercel_enabled
+
+    flag = os.environ.get("USE_VERCEL_GATEWAY", "").lower()
+    if flag not in ("true", "1", "yes"):
+        return
+
+    gateway_url = os.environ.get(
+        "VERCEL_GATEWAY_URL", "https://gateway.ai.vercel.app/v1"
+    )
+
+    from src.providers.vercel_gateway import VercelGatewayProvider
+
+    for provider_name in ("openai", "anthropic", "google", "deepseek", "mistral"):
+        _vercel_registry[provider_name] = VercelGatewayProvider(
+            gateway_url=gateway_url,
+            upstream_provider=provider_name,
+        )
+
+    _vercel_enabled = True
+    logger.info(
+        "Vercel AI Gateway enabled: %d providers wrapped (url=%s)",
+        len(_vercel_registry),
+        gateway_url,
+    )
+
+
+_init_vercel_gateway()
+
+
+def is_vercel_gateway_enabled() -> bool:
+    """Return True if the Vercel AI Gateway feature flag is active."""
+    return _vercel_enabled
+
+
+# ── Registry lookup ────────────────────────────────────────────────────
+
+
 def get_provider(provider_name: str) -> ProviderAdapter:
     """Look up a provider adapter by canonical name.
+
+    When the Vercel AI Gateway is enabled, returns the gateway-wrapped
+    adapter.  Falls back to the direct adapter otherwise.
 
     Raises:
         ValueError: Unknown provider name.
     """
+    if _vercel_enabled:
+        adapter = _vercel_registry.get(provider_name)
+        if adapter is not None:
+            return adapter
+
     adapter = PROVIDER_REGISTRY.get(provider_name)
     if adapter is None:
         raise ValueError(f"Unknown provider: {provider_name}")
@@ -80,10 +135,16 @@ def get_provider_for_model(model_id: str) -> ProviderAdapter:
     """Find the adapter that handles a given model ID.
 
     Uses ``supports_model()`` prefix matching.  Returns the first match.
+    Checks the Vercel registry first when the gateway is enabled.
 
     Raises:
         ValueError: No provider found for the model.
     """
+    if _vercel_enabled:
+        for adapter in _vercel_registry.values():
+            if adapter.supports_model(model_id):
+                return adapter
+
     for adapter in PROVIDER_REGISTRY.values():
         if adapter.supports_model(model_id):
             return adapter
@@ -114,6 +175,7 @@ _ENV_MAP: dict[str, str] = {
     "google": "GOOGLE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "vercel": "VERCEL_API_TOKEN",
 }
 
 

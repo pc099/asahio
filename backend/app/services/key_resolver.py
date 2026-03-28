@@ -25,6 +25,7 @@ _ENV_MAP: dict[str, str] = {
     "google": "GOOGLE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "vercel": "VERCEL_API_TOKEN",
 }
 
 
@@ -77,7 +78,14 @@ class DBKeyResolver:
             except Exception:
                 logger.warning("Error checking BYOK key for %s (org=%s)", provider, org_id, exc_info=True)
 
-        # 2. Platform env var
+        # 2. Vercel AI Gateway token (if gateway is enabled)
+        if os.environ.get("USE_VERCEL_GATEWAY", "").lower() in ("true", "1", "yes"):
+            vercel_token = os.environ.get("VERCEL_API_TOKEN")
+            if vercel_token:
+                logger.debug("Resolved Vercel gateway token for %s (org=%s)", provider, org_id)
+                return vercel_token
+
+        # 3. Platform env var
         env_var = _ENV_MAP.get(provider)
         if env_var:
             key = os.environ.get(env_var)

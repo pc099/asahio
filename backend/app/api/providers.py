@@ -434,8 +434,12 @@ async def get_provider_health_dashboard(request: Request):
     logger = logging.getLogger(__name__)
 
     try:
+        from app.config import get_settings
         from app.services.provider_health import get_all_provider_health
         from app.core.optimizer import _provider_circuits
+
+        settings = get_settings()
+        gateway_enabled = settings.use_vercel_gateway
 
         # Get provider health from health checker
         provider_health = get_all_provider_health()
@@ -469,6 +473,8 @@ async def get_provider_health_dashboard(request: Request):
                     "health": health,
                     "circuit_breaker": circuit_info,
                     "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "gateway_routed": gateway_enabled and provider != "vercel_gateway",
+                    "is_gateway": provider == "vercel_gateway",
                 })
             except Exception as e:
                 logger.warning(f"Failed to process provider {provider}: {e}")
@@ -486,6 +492,8 @@ async def get_provider_health_dashboard(request: Request):
             "healthy_count": sum(1 for p in health_status if p.get("health") == "healthy"),
             "degraded_count": sum(1 for p in health_status if p.get("health") == "degraded"),
             "unreachable_count": sum(1 for p in health_status if p.get("health") == "unreachable"),
+            "gateway_enabled": gateway_enabled,
+            "gateway_url": settings.vercel_gateway_url if gateway_enabled else None,
         }
     except Exception as e:
         logger.exception("Failed to get provider health dashboard")
@@ -496,5 +504,7 @@ async def get_provider_health_dashboard(request: Request):
             "healthy_count": 0,
             "degraded_count": 0,
             "unreachable_count": 0,
+            "gateway_enabled": False,
+            "gateway_url": None,
             "error": str(e),
         }

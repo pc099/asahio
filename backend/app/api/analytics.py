@@ -1,13 +1,14 @@
-﻿"""Analytics routes â€” all org-scoped.
+﻿"""Analytics routes — all org-scoped.
 
-GET /analytics/overview      â€” KPI cards
-GET /analytics/savings       â€” Time series savings data
-GET /analytics/models        â€” Cost breakdown by model
-GET /analytics/cache         â€” Cache performance per tier
-GET /analytics/latency       â€” p50/p90/p99 latency percentiles
-GET /analytics/requests      â€” Paginated request log
-GET /analytics/forecast      â€” Cost forecast
-GET /analytics/recommendations â€” Optimization suggestions
+GET /analytics/overview         — KPI cards
+GET /analytics/savings          — Time series savings data
+GET /analytics/models           — Cost breakdown by model
+GET /analytics/cache            — Cache performance per tier
+GET /analytics/latency          — p50/p90/p99 latency percentiles
+GET /analytics/requests         — Paginated request log
+GET /analytics/forecast         — Cost forecast
+GET /analytics/recommendations  — Optimization suggestions
+GET /analytics/leaderboard      — Model leaderboard with per-model metrics
 """
 
 import uuid
@@ -564,4 +565,129 @@ async def analytics_recommendations(
         })
 
     return {"recommendations": recommendations}
+
+
+# ── Leaderboard ──────────────────────────────────────────────────────
+
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    model: str
+    provider: Optional[str]
+    request_count: int
+    avg_latency_ms: float
+    cache_hit_rate: float
+    total_cost_usd: float
+    avg_savings_pct: float
+    hallucination_rate: float
+    total_input_tokens: int
+    total_output_tokens: int
+
+
+class LeaderboardResponse(BaseModel):
+    period: str
+    sort_by: str
+    entries: list[LeaderboardEntry]
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+async def analytics_leaderboard(
+    request: Request,
+    period: str = Query("30d", pattern=r"^(7d|30d|90d)$"),
+    sort_by: str = Query(
+        "request_count",
+        pattern=r"^(request_count|avg_latency_ms|cache_hit_rate|total_cost_usd|avg_savings_pct|hallucination_rate)$",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> LeaderboardResponse:
+    """Model leaderboard: per-model aggregated metrics for ranking and comparison."""
+    org_id = _get_org_id(request)
+    since = datetime.now(timezone.utc) - _period_to_timedelta(period)
+
+    # Aggregate from RequestLog
+    result = await db.execute(
+        select(
+            RequestLog.model_used,
+            RequestLog.provider,
+            func.count(RequestLog.id).label("request_count"),
+            func.coalesce(func.avg(RequestLog.latency_ms), 0).label("avg_latency_ms"),
+            func.sum(case((RequestLog.cache_hit.is_(True), 1), else_=0)).label(
+                "cache_hits"
+            ),
+            func.coalesce(func.sum(RequestLog.cost_with_asahi), 0).label("total_cost"),
+            func.coalesce(func.avg(RequestLog.savings_pct), 0).label("avg_savings_pct"),
+            func.coalesce(func.sum(RequestLog.input_tokens), 0).label(
+                "total_input_tokens"
+            ),
+            func.coalesce(func.sum(RequestLog.output_tokens), 0).label(
+                "total_output_tokens"
+            ),
+        )
+        .where(
+            RequestLog.organisation_id == org_id,
+            RequestLog.created_at >= since,
+        )
+        .group_by(RequestLog.model_used, RequestLog.provider)
+        .order_by(func.count(RequestLog.id).desc())
+        .limit(50)
+    )
+    rows = result.all()
+
+    # Get hallucination counts from CallTrace
+    hallucination_result = await db.execute(
+        select(
+            CallTrace.model_used,
+            func.count(CallTrace.id).label("total_traces"),
+            func.sum(
+                case(
+                    (CallTrace.hallucination_tag.isnot(None), 1),
+                    else_=0,
+                )
+            ).label("hallucination_count"),
+        )
+        .where(
+            CallTrace.organisation_id == org_id,
+            CallTrace.created_at >= since,
+        )
+        .group_by(CallTrace.model_used)
+    )
+    hallucination_map: dict[str, float] = {}
+    for h_row in hallucination_result.all():
+        total = h_row.total_traces or 1
+        hallucination_map[h_row.model_used] = (h_row.hallucination_count or 0) / total
+
+    # Build entries
+    entries: list[LeaderboardEntry] = []
+    for row in rows:
+        request_count = row.request_count or 0
+        cache_hits = row.cache_hits or 0
+        cache_hit_rate = cache_hits / request_count if request_count > 0 else 0.0
+        hallucination_rate = hallucination_map.get(row.model_used, 0.0)
+
+        entries.append(
+            LeaderboardEntry(
+                rank=0,  # Assigned after sorting
+                model=row.model_used or "unknown",
+                provider=row.provider,
+                request_count=request_count,
+                avg_latency_ms=round(float(row.avg_latency_ms), 1),
+                cache_hit_rate=round(cache_hit_rate, 4),
+                total_cost_usd=round(float(row.total_cost), 4),
+                avg_savings_pct=round(float(row.avg_savings_pct), 1),
+                hallucination_rate=round(hallucination_rate, 4),
+                total_input_tokens=int(row.total_input_tokens),
+                total_output_tokens=int(row.total_output_tokens),
+            )
+        )
+
+    # Sort — lower is better for latency and hallucination_rate
+    ascending_metrics = {"avg_latency_ms", "hallucination_rate"}
+    reverse = sort_by not in ascending_metrics
+    entries.sort(key=lambda e: getattr(e, sort_by, 0) or 0, reverse=reverse)
+
+    # Assign ranks
+    for i, entry in enumerate(entries, 1):
+        entry.rank = i
+
+    return LeaderboardResponse(period=period, sort_by=sort_by, entries=entries)
 

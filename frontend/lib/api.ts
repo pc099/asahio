@@ -40,6 +40,26 @@ export interface ModelBreakdown {
   total_savings: number;
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  model: string;
+  provider: string | null;
+  request_count: number;
+  avg_latency_ms: number;
+  cache_hit_rate: number;
+  total_cost_usd: number;
+  avg_savings_pct: number;
+  hallucination_rate: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+}
+
+export interface LeaderboardResponse {
+  period: string;
+  sort_by: string;
+  entries: LeaderboardEntry[];
+}
+
 export interface RequestLogEntry {
   id: string;
   call_trace_id: string | null;
@@ -563,6 +583,20 @@ export async function getCachePerformance(
 ) {
   return fetchApi<CachePerformance>(
     `/analytics/cache?period=${period}`,
+    {},
+    token,
+    orgHeaders(orgSlug)
+  );
+}
+
+export async function getModelLeaderboard(
+  period: string = "30d",
+  sortBy: string = "request_count",
+  token?: string,
+  orgSlug?: string
+) {
+  return fetchApi<LeaderboardResponse>(
+    `/analytics/leaderboard?period=${period}&sort_by=${sortBy}`,
     {},
     token,
     orgHeaders(orgSlug)
